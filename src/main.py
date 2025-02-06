@@ -4,6 +4,8 @@ from services.spark_session import SparkSessionFactory
 from services.transformers import BronzeToSilverTransformer
 from configs.config import Config
 import os
+import gc
+import time
 
 def main():
     # General configurations
@@ -32,10 +34,11 @@ def main():
         transformer.transform_treino(config.bronze_path, config.silver_path_treino)
         transformer.transform_itens(config.bronze_path, config.silver_path_itens)
     finally:
-        # Ensure Spark session is stopped
         print("Stopping Spark session...")
         spark_session.stop()
-        print("Spark session stopped.")
+        time.sleep(10)
+        gc.collect()
+        print("Spark session closed and memory released.")
 
 if __name__ == "__main__":
     main()

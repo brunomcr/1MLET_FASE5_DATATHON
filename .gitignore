@@ -170,5 +170,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-
-datalake/
+## Ignore datalake files
+datalake/bronze/*
+datalake/silver/*
