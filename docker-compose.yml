@@ -1,0 +1,45 @@
+services:
+  etl:
+    build: 
+      context: .
+      dockerfile: Dockerfile.etl
+    image: datathon-etl
+    volumes:
+      - ./:/app
+      - ./datalake:/app/datalake
+    environment:
+      - SPARK_LOCAL_IP=etl
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 16g
+          cpus: '12'
+
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
+    image: datathon-jupyter
+    ports:
+      - "8888:8888"
+      - "4040:4040"  # Spark UI
+    volumes:
+      - ./:/app
+      - ./datalake:/app/datalake
+    environment:
+      - SPARK_LOCAL_IP=jupyter
+      - JUPYTER_ENABLE_LAB=yes
+      - PYTHONUNBUFFERED=1
+      # Spark configurations
+      - SPARK_DRIVER_MEMORY=8g
+      - SPARK_EXECUTOR_MEMORY=8g
+      - SPARK_EXECUTOR_CORES=4
+      - SPARK_WORKER_MEMORY=8g
+      - SPARK_WORKER_CORES=4
+    deploy:
+      resources:
+        limits:
+          memory: 16g
+          cpus: '8'
+    shm_size: '2gb'

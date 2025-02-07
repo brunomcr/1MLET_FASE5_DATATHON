@@ -1,3 +1,4 @@
+from utils.logger import logger
 import time
 from pyspark.sql.functions import col, explode, split, arrays_zip, from_unixtime, year, month, dayofmonth, to_timestamp, regexp_replace
 
@@ -7,13 +8,13 @@ class BronzeToSilverTransformer:
 
     def log_step(self, message):
         """ Logs the current step with a timestamp to track progress. """
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+        logger.info(message)
 
     def transform_treino(self, input_path: str, output_path: str):
         self.log_step("Starting 'Treino' transformation...")
 
         file_path = f"{input_path}/files/treino/"
-        self.log_step("Reading CSV files...")
+        self.log_step(f"Reading CSV files from {file_path}...")
         df = self.spark.read.option("header", "true").csv(file_path).repartition(8)
         self.log_step("Finished reading CSV files.")
 
@@ -62,7 +63,7 @@ class BronzeToSilverTransformer:
         self.log_step("Starting 'Itens' transformation...")
 
         file_path = f"{input_path}/itens/itens/"
-        self.log_step("Reading CSV files...")
+        self.log_step(f"Reading CSV files from {file_path}...")
         df = self.spark.read \
             .option("header", "true") \
             .option("quote", "\"") \

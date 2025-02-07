@@ -170,6 +170,13 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-## Ignore datalake files
-datalake/bronze/*
-datalake/silver/*
+
+# ... existing content ...
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Dados
+datalake/*
+!datalake/.gitkeep
