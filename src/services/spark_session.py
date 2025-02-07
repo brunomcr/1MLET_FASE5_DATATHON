@@ -11,6 +11,7 @@ class SparkSessionFactory:
             .config("spark.default.parallelism", "12") \
             .config("spark.sql.shuffle.partitions", "50") \
             .config("spark.memory.fraction", "0.8") \
+            .config("spark.ui.enabled", "false") \
             .config("spark.sql.files.maxPartitionBytes", "32m") \
             .getOrCreate()
         print("Spark Session initialized.")
