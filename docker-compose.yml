@@ -13,8 +13,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 16g
-          cpus: '12'
+          memory: 6g
+          cpus: '4'
 
   jupyter:
     build:
@@ -40,6 +40,6 @@ services:
     deploy:
       resources:
         limits:
-          memory: 16g
-          cpus: '8'
+          memory: 6g
+          cpus: '4'
     shm_size: '2gb'
