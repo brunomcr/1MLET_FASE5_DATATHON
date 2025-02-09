@@ -13,6 +13,16 @@ RUN mkdir -p /home/jovyan/.local/share/jupyter && \
 
 WORKDIR /app
 
+# Install additional Python packages for data visualization
+RUN pip install --no-cache-dir \
+    seaborn==0.12.2 \
+    matplotlib==3.7.1 \
+    plotly==5.14.1 \
+    pandas==1.5.3 \
+    numpy==1.24.3 \
+    scikit-learn==1.2.2 \
+    ipywidgets==8.0.6
+
 # Install poetry with PATH configuration
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
     cd /usr/local/bin && \
@@ -33,6 +43,10 @@ COPY . .
 RUN poetry install --no-interaction --no-ansi
 
 ENV PYTHONUNBUFFERED=1
+
+# Configure matplotlib to use a non-interactive backend
+RUN mkdir -p /home/jovyan/.config/matplotlib && \
+    echo "backend: Agg" > /home/jovyan/.config/matplotlib/matplotlibrc
 
 # Set proper permissions
 RUN chown -R jovyan:users /app && \
