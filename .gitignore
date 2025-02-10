@@ -169,3 +169,14 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# ... existing content ...
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Dados
+datalake/*
+!datalake/.gitkeep

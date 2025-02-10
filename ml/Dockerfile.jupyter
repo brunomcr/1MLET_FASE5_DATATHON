@@ -1,0 +1,59 @@
+FROM jupyter/pyspark-notebook:latest
+
+USER root
+RUN apt-get update && \
+    apt-get install -y default-jre && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create and set permissions for Jupyter directories
+RUN mkdir -p /home/jovyan/.local/share/jupyter && \
+    mkdir -p /home/jovyan/.local/share/jupyter/runtime && \
+    chown -R jovyan:users /home/jovyan/.local
+
+WORKDIR /app
+
+# Install additional Python packages for data visualization
+RUN pip install --no-cache-dir \
+    seaborn==0.12.2 \
+    matplotlib==3.7.1 \
+    plotly==5.14.1 \
+    pandas==1.5.3 \
+    numpy==1.24.3 \
+    scikit-learn==1.2.2 \
+    ipywidgets==8.0.6
+
+# Install poetry with PATH configuration
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    cd /usr/local/bin && \
+    ln -s /home/jovyan/.local/bin/poetry poetry && \
+    poetry config virtualenvs.create false
+
+# Copy only pyproject.toml first
+COPY pyproject.toml ./
+
+# Generate lock file and install dependencies
+RUN poetry lock && \
+    poetry install --no-root --no-interaction --no-ansi
+
+# Copy the rest of the project
+COPY . .
+
+# Install project
+RUN poetry install --no-interaction --no-ansi
+
+ENV PYTHONUNBUFFERED=1
+
+# Configure matplotlib to use a non-interactive backend
+RUN mkdir -p /home/jovyan/.config/matplotlib && \
+    echo "backend: Agg" > /home/jovyan/.config/matplotlib/matplotlibrc
+
+# Set proper permissions
+RUN chown -R jovyan:users /app && \
+    chmod -R 755 /app
+
+USER ${NB_UID}
+
+EXPOSE 8888
+
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''"] 

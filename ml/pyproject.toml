@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "1mlet-fase5-datathon"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+
+# Define onde o código está localizado
+packages = [{ include = "src" }]
+
+[build-system]
+requires = ["poetry-core>=2.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+python = ">=3.9"
+gdown = "^5.2.0"
+pyspark = "^3.5.0"
+ipykernel = "^6.29.0"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.0"
+
