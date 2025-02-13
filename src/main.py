@@ -8,15 +8,21 @@ import os
 import gc
 import time
 
+
 def check_data_exists(config):
     """Verifica se os dados já foram processados"""
-    treino_path = f"{config.silver_path_treino}/_SUCCESS"
-    itens_path = f"{config.silver_path_itens}/_SUCCESS"
-    
-    if os.path.exists(treino_path) and os.path.exists(itens_path):
-        logger.info("Dados já processados encontrados!")
+    paths = [
+        f"{config.silver_path_treino}/_SUCCESS",
+        f"{config.silver_path_itens}/_SUCCESS",
+        f"{config.silver_path_merge}/_SUCCESS",
+        f"{config.silver_path_normalizer}/_SUCCESS"
+    ]
+
+    if all(os.path.exists(path) for path in paths):
+        logger.info("Todos os dados já processados. Pulando processamento.")
         return True
     return False
+
 
 def main():
     logger.info("Starting ETL process...")
@@ -55,12 +61,17 @@ def main():
         transformer.transform_treino(config.bronze_path, config.silver_path_treino)
         logger.info("Starting Itens transformation...")
         transformer.transform_itens(config.bronze_path, config.silver_path_itens)
+        logger.info("Starting Data Merge...")
+        transformer.merge_data(config.silver_path_treino, config.silver_path_itens, config.silver_path_merge)
+        logger.info("Starting Data Normalization...")
+        transformer.normalize_data(config.silver_path_merge, config.silver_path_normalizer)
     finally:
         logger.info("Stopping Spark session...")
         spark_session.stop()
         time.sleep(10)
         gc.collect()
         logger.info("Spark session closed and memory released.")
+
 
 if __name__ == "__main__":
     main()
