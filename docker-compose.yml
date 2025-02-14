@@ -43,3 +43,22 @@ services:
           memory: 6g
           cpus: '4'
     shm_size: '2gb'
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    image: datathon-streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+      - ./datalake:/app/datalake
+    environment:
+      - SPARK_LOCAL_IP=streamlit
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+          cpus: '4'
