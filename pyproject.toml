@@ -17,6 +17,7 @@ python = ">=3.9"
 gdown = "^5.2.0"
 pyspark = "^3.5.0"
 ipykernel = "^6.29.0"
+setuptools = "^75.8.0"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.0"
