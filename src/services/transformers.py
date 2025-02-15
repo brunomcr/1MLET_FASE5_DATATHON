@@ -9,12 +9,14 @@ from pyspark.sql.window import Window
 from pyspark.sql.types import DoubleType
 from pyspark.ml.feature import MinMaxScaler, VectorAssembler
 from pyspark.ml import Pipeline
-from pyspark.sql.functions import udf
 
 
 class BronzeToSilverTransformer:
     def __init__(self, spark):
         self.spark = spark
+
+        # Definição da UDF como atributo de classe
+        self.extract_scalar_udf = udf(lambda vec: float(vec[0]) if vec else None, DoubleType())
 
     def log_step(self, message):
         """ Logs the current step with a timestamp to track progress. """
@@ -141,99 +143,69 @@ class BronzeToSilverTransformer:
 
         self.log_step("'Itens' transformation completed and data saved.")
 
-    def merge_data(self, treino_path: str, itens_path: str, output_path: str):
-        self.log_step("Starting data merge process...")
+        # 🚀 UDF para extrair valores de vetores (DenseVector)
 
-        # Ler os dados transformados
-        self.log_step("Loading transformed 'Treino' dataset...")
-        df_treino = self.spark.read.parquet(treino_path)
-
-        self.log_step("Loading transformed 'Itens' dataset...")
-        df_itens = self.spark.read.parquet(itens_path)
-
-        # Realizar o join baseado na coluna "history" (do treino) e no identificador do item
-        self.log_step("Merging datasets...")
-        df_merged = df_treino.join(df_itens, df_treino.history == df_itens.page, how="left")
-
-        # Selecionar apenas colunas necessárias (evitar duplicação)
-        df_merged = df_merged.drop(df_itens.page)
-
-        self.log_step("Saving merged dataset...")
-        df_merged.coalesce(1).write \
-            .mode("overwrite") \
-            .option("compression", "snappy") \
-            .parquet(output_path)
-
-        self.log_step("Data merge completed and saved!")
-
-
-    def normalize_data(self, input_path: str, output_path: str):
-        self.log_step("Starting data normalization...")
+    def normalize_treino(self, input_path: str, output_path: str):
+        self.log_step("Starting treino normalization...")
 
         df = self.spark.read.parquet(input_path)
 
         self.log_step("Applying log1p transformation...")
-        log_columns = [
-            "timeOnPageHistory", "interaction_score", "avg_time_on_page", "adjusted_score",
-            "days_since_published", "days_since_modified", "time_since_last_interaction", "time_since_first_interaction"
-        ]
+        log_columns = ["timeOnPageHistory", "time_since_last_interaction", "time_since_first_interaction"]
         for col_name in log_columns:
             if col_name in df.columns:
                 df = df.withColumn(col_name, log1p(col(col_name)))
 
-        self.log_step("Converting 'userType' to numeric values...")
-        if "userType" in df.columns:
-            df = df.withColumn("userType", when(col("userType") == "Logged", 1).otherwise(0))
-
-        self.log_step("Applying MinMaxScaler normalization...")
-        minmax_columns = [
-            "numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory",
-            "recency_weight", "time_weight", "timestampHistory", "issued",
-            "modified", "hour", "dayofweek", "month"
-        ]
-
-        normalized_columns = []  # Lista para armazenar as colunas normalizadas
-
+        self.log_step("Applying MinMaxScaler...")
+        minmax_columns = ["numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory", "hour",
+                          "dayofweek", "month"]
         for col_name in minmax_columns:
             if col_name in df.columns:
                 assembler = VectorAssembler(inputCols=[col_name], outputCol=f"{col_name}_vec")
                 scaler = MinMaxScaler(inputCol=f"{col_name}_vec", outputCol=f"{col_name}_scaled")
                 pipeline = Pipeline(stages=[assembler, scaler])
-
-                self.log_step(f"Scaling feature: {col_name}")
                 model = pipeline.fit(df)
                 df = model.transform(df)
 
-                normalized_columns.append(col_name)  # Adiciona à lista de colunas processadas
+                # Extração do valor escalar do vetor usando UDF
+                df = df.withColumn(col_name, self.extract_scalar_udf(col(f"{col_name}_scaled")))
 
-        self.log_step("Extracting scalar values from scaled vectors...")
+                # Removendo colunas de vetores
+                df = df.drop(f"{col_name}_vec").drop(f"{col_name}_scaled")
 
-        # Função UDF para extrair valores de vetores (DenseVector)
-        def extract_scalar(vec):
-            return float(vec[0]) if vec else None
+        self.log_step("Saving normalized treino dataset...")
+        df.coalesce(1).write.mode("overwrite").option("compression", "snappy").parquet(output_path)
 
-        extract_scalar_udf = udf(extract_scalar, DoubleType())
+        self.log_step("Treino normalization completed!")
 
-        # Extração dos valores escalares
-        for col_name in normalized_columns:
-            df = df.withColumn(col_name, extract_scalar_udf(col(f"{col_name}_scaled")))
+    def normalize_itens(self, input_path: str, output_path: str):
+        self.log_step("Starting itens normalization...")
 
-        # 🚨 **Correção: Remover as colunas APÓS a extração dos valores**
-        self.log_step("Dropping vectorized columns after normalization...")
-        df = df.drop(*[f"{col_name}_vec" for col_name in normalized_columns])  # Remove colunas _vec
-        df = df.drop(*[f"{col_name}_scaled" for col_name in normalized_columns])  # Remove colunas _scaled
+        df = self.spark.read.parquet(input_path)
 
-        self.log_step(f"Final columns in DataFrame after normalization: {df.columns}")
+        self.log_step("Applying log1p transformation...")
+        log_columns = ["days_since_published", "days_since_modified"]
+        for col_name in log_columns:
+            if col_name in df.columns:
+                df = df.withColumn(col_name, log1p(col(col_name)))
 
-        record_count = df.count()
-        self.log_step(f"Total registros após normalização: {record_count}")
+        self.log_step("Applying MinMaxScaler...")
+        minmax_columns = ["days_since_published", "days_since_modified"]
+        for col_name in minmax_columns:
+            if col_name in df.columns:
+                assembler = VectorAssembler(inputCols=[col_name], outputCol=f"{col_name}_vec")
+                scaler = MinMaxScaler(inputCol=f"{col_name}_vec", outputCol=f"{col_name}_scaled")
+                pipeline = Pipeline(stages=[assembler, scaler])
+                model = pipeline.fit(df)
+                df = model.transform(df)
 
-        if record_count > 0:
-            self.log_step("Saving normalized dataset...")
-            df.coalesce(1).write \
-                .mode("overwrite") \
-                .option("compression", "snappy") \
-                .parquet(output_path)
-            self.log_step("Data normalization completed and saved!")
-        else:
-            self.log_step("No data available to save after normalization.")
+                # Extração do valor escalar do vetor usando UDF
+                df = df.withColumn(col_name, self.extract_scalar_udf(col(f"{col_name}_scaled")))
+
+                # Removendo colunas de vetores
+                df = df.drop(f"{col_name}_vec").drop(f"{col_name}_scaled")
+
+        self.log_step("Saving normalized itens dataset...")
+        df.coalesce(1).write.mode("overwrite").option("compression", "snappy").parquet(output_path)
+
+        self.log_step("Itens normalization completed!")
