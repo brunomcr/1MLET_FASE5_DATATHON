@@ -5,9 +5,9 @@ class SparkSessionFactory:
         print("Initializing Spark Session...")
         spark = SparkSession.builder \
             .appName(app_name) \
-            .config("spark.driver.memory", "8g") \
+            .config("spark.driver.memory", "10g") \
             .config("spark.executor.memory", "8g") \
-            .config("spark.executor.cores", "4") \
+            .config("spark.executor.cores", "6") \
             .config("spark.default.parallelism", "12") \
             .config("spark.sql.shuffle.partitions", "50") \
             .config("spark.memory.fraction", "0.8") \

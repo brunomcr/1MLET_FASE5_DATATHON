@@ -6,6 +6,7 @@ class Config:
         self.silver_path_itens = "/app/datalake/silver/itens"
         self.silver_path_treino_normalized = "/app/datalake/silver/treino_normalized"
         self.silver_path_itens_normalized = "/app/datalake/silver/itens_normalized"
+        self.model_fasttext = "/app/model/cc.pt.300.bin"
 
         self.file_id = "13rvnyK5PJADJQgYe-VbdXb7PpLPj7lPr"
         self.download_url = f"https://drive.google.com/uc?id={self.file_id}"
