@@ -45,7 +45,7 @@ def main():
         config.download_url,
         config.output_file
     )
-
+    
     # Descompactar e deletar o .zip
     file_handler = FileHandler()
     file_handler.unzip_and_delete(config.output_file, config.bronze_path)
@@ -64,14 +64,14 @@ def main():
         transformer.transform_treino(config.bronze_path, config.silver_path_treino)
 
         logger.info("Starting Itens transformation...")
-        transformer.transform_itens(config.bronze_path, config.silver_path_itens)
+        transformer.transform_itens(config.bronze_path, config.silver_path_itens, config.model_fasttext)
 
         # --------------------------------------
         # NORMALIZAR OS DADOS
         # --------------------------------------
         logger.info("Starting Treino normalization...")
         transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
-
+        
         logger.info("Starting Itens normalization...")
         transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
 
