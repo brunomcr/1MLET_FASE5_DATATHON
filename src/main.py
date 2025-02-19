@@ -39,16 +39,16 @@ def main():
     os.makedirs(config.bronze_path, exist_ok=True)
     logger.info(f"Created directory: {config.bronze_path}")
 
-    # # Baixar o arquivo
-    # downloader = Downloader()
-    # downloader.download_file(
-    #     config.download_url,
-    #     config.output_file
-    # )
-    #
-    # # Descompactar e deletar o .zip
-    # file_handler = FileHandler()
-    # file_handler.unzip_and_delete(config.output_file, config.bronze_path)
+    # Baixar o arquivo
+    downloader = Downloader()
+    downloader.download_file(
+        config.download_url,
+        config.output_file
+    )
+    
+    # Descompactar e deletar o .zip
+    file_handler = FileHandler()
+    file_handler.unzip_and_delete(config.output_file, config.bronze_path)
 
     # Iniciar a sessão Spark
     logger.info("Initializing Spark session...")
@@ -60,8 +60,8 @@ def main():
         # --------------------------------------
         # TRANSFORMAR OS DADOS
         # --------------------------------------
-        # logger.info("Starting Treino transformation...")
-        # transformer.transform_treino(config.bronze_path, config.silver_path_treino)
+        logger.info("Starting Treino transformation...")
+        transformer.transform_treino(config.bronze_path, config.silver_path_treino)
 
         logger.info("Starting Itens transformation...")
         transformer.transform_itens(config.bronze_path, config.silver_path_itens, config.model_fasttext)
@@ -69,11 +69,11 @@ def main():
         # --------------------------------------
         # NORMALIZAR OS DADOS
         # --------------------------------------
-        # logger.info("Starting Treino normalization...")
-        # transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
-        #
-        # logger.info("Starting Itens normalization...")
-        # transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
+        logger.info("Starting Treino normalization...")
+        transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
+        
+        logger.info("Starting Itens normalization...")
+        transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
 
     finally:
         logger.info("Stopping Spark session...")

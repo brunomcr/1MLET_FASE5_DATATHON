@@ -3,17 +3,24 @@ import time
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, explode, split, arrays_zip, from_unixtime, to_timestamp, regexp_replace,
-    hour, dayofweek, month, current_timestamp, lag, avg, min, max, log1p, udf, trim, concat_ws
+    hour, dayofweek, month, current_timestamp, lag, avg, min, max, log1p, udf, trim, concat_ws, year, month , dayofmonth, monotonically_increasing_id
 )
 from pyspark.sql.window import Window
 from pyspark.sql.types import DoubleType, ArrayType, FloatType
 from pyspark.ml.feature import MinMaxScaler, VectorAssembler
 from pyspark.ml import Pipeline
 import fasttext  # Biblioteca fastText para Python
+from services.spark_session import SparkSessionFactory
+import gc
 
 class BronzeToSilverTransformer:
-    def __init__(self, spark):
-        self.spark = spark
+    def __init__(self, spark=None):
+        if spark is None:
+            # Usar a factory existente ao invés de criar uma nova configuração
+            spark_factory = SparkSessionFactory()
+            self.spark = spark_factory.create_spark_session("G1 Recommendations")
+        else:
+            self.spark = spark
         # UDF para extrair o valor escalar de um vetor, usada na normalização
         self.extract_scalar_udf = udf(lambda vec: float(vec[0]) if vec else None, DoubleType())
 
@@ -44,49 +51,103 @@ class BronzeToSilverTransformer:
 
     def apply_fasttext_embedding(self, df, ft_model_path):
         """
-        Aplica uma UDF que carrega o modelo fastText de forma preguiçosa (lazy loading) em cada worker e
-        gera os embeddings a partir da coluna "title". Nesta configuração, apenas "title" é utilizado para
-        representar semanticamente os dados.
+        Aplica embeddings do FastText com salvamento incremental
         """
         self.log_step("Setting up fastText UDF with lazy loading...")
 
-        def get_fasttext_embedding(text):
-            if text is None:
-                return []
-            try:
-                global _ft_model_local
+        def get_fasttext_embedding(text, max_retries=3):
+            if text is None or not text:
+                return [0.0] * 100
+            
+            text = text[:300]
+            
+            for attempt in range(max_retries):
                 try:
-                    _ft_model_local
-                except NameError:
-                    _ft_model_local = fasttext.load_model(ft_model_path)
-                return _ft_model_local.get_sentence_vector(text).tolist()
-            except Exception as e:
-                logger.error(f"fastText error for text: {text[:30]}... Exception: {e}")
-                return []
-
+                    global _ft_model_local
+                    if '_ft_model_local' not in globals():
+                        _ft_model_local = fasttext.load_model(ft_model_path)
+                    return _ft_model_local.get_sentence_vector(text).tolist()
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        return [0.0] * 100
+                    time.sleep(0.1)
+        
         embedding_udf = udf(get_fasttext_embedding, ArrayType(FloatType()))
-
-        self.log_step("Combining text columns for embedding...")
-        # Utilizar somente a coluna "title" para gerar o embedding
-        df = df.withColumn("text_combined", col("title"))
-        self.log_step("Generating fastText embeddings...")
-        df = df.withColumn("fasttext_embedding", embedding_udf("text_combined"))
-        df = df.drop("text_combined")
-        return df
+        
+        self.log_step("Processing embeddings in batches...")
+        
+        window_size = 200
+        num_partitions = 4
+        
+        # Reparticionamento inicial
+        df = df.repartition(num_partitions)
+        df = df.withColumn("row_number", monotonically_increasing_id())
+        df = df.withColumn("batch_id", (col("row_number") / window_size).cast("int"))
+        
+        batch_count = df.select("batch_id").distinct().count()
+        self.log_step(f"Total number of batches: {batch_count}")
+        
+        # Criar diretório temporário para resultados intermediários
+        temp_output_path = "temp_embeddings"
+        
+        for batch in range(int(batch_count)):
+            try:
+                self.log_step(f"Processing batch {batch + 1} of {batch_count}")
+                
+                batch_df = df.filter(col("batch_id") == batch)
+                
+                current_batch = batch_df.withColumn(
+                    "fasttext_embedding",
+                    embedding_udf(col("title"))
+                )
+                
+                # Remover colunas temporárias antes de salvar
+                current_batch = current_batch.drop("row_number", "batch_id")
+                
+                # Salvar batch atual
+                current_batch.write.mode("append").parquet(f"{temp_output_path}/batch_{batch}")
+                
+                # Limpar cache a cada 5 batches
+                if batch % 5 == 0:
+                    self.spark.catalog.clearCache()
+                    gc.collect()  # Forçar garbage collection
+                
+            except Exception as e:
+                self.log_step(f"Error processing batch {batch + 1}: {str(e)}")
+                continue
+        
+        # Ler todos os resultados salvos
+        self.log_step("Combining all processed batches...")
+        result_df = self.spark.read.parquet(f"{temp_output_path}/batch_*")
+        
+        # Otimizar particionamento final
+        result_df = result_df.coalesce(num_partitions)
+        
+        # Limpar diretório temporário
+        self.spark.sparkContext.hadoop.fs.delete(temp_output_path, True)
+        
+        return result_df
 
     def transform_treino(self, input_path: str, output_path: str):
         self.log_step("Starting 'Treino' transformation...")
         file_path = f"{input_path}/files/treino/"
         self.log_step(f"Reading CSV files from {file_path}...")
-        df = self.spark.read.option("header", "true").csv(file_path).repartition(8)
+        
+        df = self.spark.read.option("header", "true") \
+            .option("quote", "\"") \
+            .option("escape", "\"") \
+            .option("multiLine", "true") \
+            .option("inferSchema", "true") \
+            .csv(file_path).repartition(4)
+        
         self.log_step("Finished reading CSV files.")
-
+        
+        self.log_step("Splitting and transforming columns...")
         cols_to_split = [
             "history", "timestampHistory", "numberOfClicksHistory",
             "timeOnPageHistory", "scrollPercentageHistory",
             "pageVisitsCountHistory"
         ]
-        self.log_step("Splitting and transforming columns...")
         for col_name in cols_to_split:
             df = df.withColumn(col_name, split(col(col_name), ",\\s*"))
 
@@ -138,33 +199,51 @@ class BronzeToSilverTransformer:
         df_temporal = df_temporal.withColumn(
             "adjusted_score", col("interaction_score") * col("recency_weight") * col("time_weight")
         )
+        self.log_step("Adding partition columns...")
+        df = df_normalized \
+            .withColumn("timestamp", from_unixtime(col("timestampHistory"))) \
+            .withColumn("year", year(col("timestamp"))) \
+            .withColumn("month", month(col("timestamp"))) \
+            .withColumn("day", dayofmonth(col("timestamp"))) \
+            .drop("timestamp")  # Remove a coluna temporária
+        
         self.log_step("Writing partitioned Parquet files for treino...")
-        df_temporal.write.mode("overwrite").option("compression", "snappy").parquet(output_path)
+        df.write.mode("overwrite") \
+               .option("compression", "snappy") \
+               .option("maxRecordsPerFile", "10000") \
+               .partitionBy("year", "month", "day") \
+               .parquet(output_path)
         self.log_step("'Treino' transformation completed and data saved.")
 
     def transform_itens(self, input_path: str, output_path: str, model_path: str):
         self.log_step("Starting 'Itens' transformation...")
         file_path = f"{input_path}/itens/itens/"
         self.log_step(f"Reading CSV files from {file_path}...")
+        
+        # Reduzir o número de partições
         df = self.spark.read.option("header", "true") \
             .option("quote", "\"") \
             .option("escape", "\"") \
             .option("multiLine", "true") \
             .option("inferSchema", "true") \
-            .csv(file_path).repartition(20)
+            .csv(file_path).repartition(4)  # Reduzido de 20 para 4
+        
         self.log_step("Finished reading CSV files.")
 
         self.log_step("Cleaning up timestamp columns...")
         df = df.withColumn("issued", regexp_replace(col("issued"), r"\+00:00", "")) \
                .withColumn("modified", regexp_replace(col("modified"), r"\+00:00", ""))
+        
         self.log_step("Converting strings to timestamp columns...")
-        df = df.withColumn("issued", to_timestamp(col("issued"), "yyyy-MM-dd HH:mm:ss").cast("long")) \
-               .withColumn("modified", to_timestamp(col("modified"), "yyyy-MM-dd HH:mm:ss").cast("long"))
+        df = df.withColumn("issued", to_timestamp(col("issued"), "yyyy-MM-dd HH:mm:ss")) \
+               .withColumn("modified", to_timestamp(col("modified"), "yyyy-MM-dd HH:mm:ss"))
+        
         self.log_step("Calculating days since published and modified...")
         df = df.withColumn("days_since_published",
-                           ((current_timestamp().cast("long") - col("issued")) / 86400).cast("int")) \
+                           ((current_timestamp().cast("long") - col("issued").cast("long")) / 86400).cast("int")) \
                .withColumn("days_since_modified",
-                           ((current_timestamp().cast("long") - col("modified")) / 86400).cast("int"))
+                           ((current_timestamp().cast("long") - col("modified").cast("long")) / 86400).cast("int"))
+        
         self.log_step("Cleaning text columns (title, body, caption)...")
         df = self.clean_text_columns(df)
 
@@ -173,12 +252,25 @@ class BronzeToSilverTransformer:
         df = df.drop("body")
         df = df.drop("caption")
 
-        self.log_step("Applying fastText embeddings on items...")
-        df = self.apply_fasttext_embedding(df, model_path)
+        # self.log_step("Applying fastText embeddings on items...")
+        # df = self.apply_fasttext_embedding(df, model_path)
+        
+        if df is None:
+            self.log_step("Error: FastText embedding failed")
+            return
+        
+        self.log_step("Adding partition columns...")
+        df = df.withColumn("year", year(col("issued"))) \
+               .withColumn("month", month(col("issued"))) \
+               .withColumn("day", dayofmonth(col("issued")))
 
         self.log_step("Writing partitioned Parquet files for itens...")
-        # Removemos o coalesce(1) para evitar concentrar todos os dados em uma única partição
-        df.write.mode("overwrite").option("compression", "snappy").parquet(output_path)
+        df.write.mode("overwrite") \
+               .option("compression", "snappy") \
+               .option("maxRecordsPerFile", "10000") \
+               .partitionBy("year", "month", "day") \
+               .parquet(output_path)
+        
         self.log_step("'Itens' transformation completed and data saved.")
 
     def normalize_treino(self, input_path: str, output_path: str):
@@ -200,6 +292,7 @@ class BronzeToSilverTransformer:
                 df = model.transform(df)
                 df = df.withColumn(col_name, self.extract_scalar_udf(col(f"{col_name}_scaled")))
                 df = df.drop(f"{col_name}_vec").drop(f"{col_name}_scaled")
+        
         self.log_step("Saving normalized treino dataset...")
         df.write.mode("overwrite").option("compression", "snappy").parquet(output_path)
         self.log_step("Treino normalization completed!")
