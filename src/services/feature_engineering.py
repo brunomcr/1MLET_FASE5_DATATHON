@@ -156,115 +156,74 @@ class FeatureEngineering:
         
         return item_features
     
-    def prepare_lightfm_matrices(self, treino_path, items_path, output_path):
-        """
-        Preparar matrizes para o LightFM
-        """
-        config = Config()
+    def prepare_lightfm_matrices(self, treino_path, items_path, advanced_features_path, output_path):
+        """Prepara as matrizes para o LightFM"""
+        logger.info("Preparing LightFM matrices...")
         
-        self.log_step(f"Iniciando preparação das matrizes em {output_path}")
+        # Carregar dados
+        treino_df = self.spark.read.parquet(treino_path)
+        items_df = self.spark.read.parquet(items_path)
+        advanced_df = self.spark.read.parquet(advanced_features_path)
         
-        try:
-            # Criar diretório se não existir
-            os.makedirs(output_path, exist_ok=True)
-            self.log_step(f"Diretório criado: {output_path}")
-            
-            # 1. Carregar dados
-            treino_df = self.spark.read.parquet(treino_path)
-            items_df = self.spark.read.parquet(items_path)
-            
-            # 2. Criar mapeamentos
-            self.create_id_mappings(treino_df, items_df)
-            
-            # 3. Processar por ano e mês
-            years = treino_df.select("year").distinct().collect()
-            
-            for year_row in years:
-                year_val = year_row['year']
-                
-                # Pegar meses do ano
-                months = (treino_df
-                         .filter(col("year") == year_val)
-                         .select("month")
-                         .distinct()
-                         .collect())
-                
-                for month_row in months:
-                    month_val = month_row['month']
-                    self.log_step(f"Processing year {year_val}, month {month_val}...")
-                    
-                    # Filtrar dados do mês
-                    treino_month = (treino_df
-                        .filter((col("year") == year_val) & 
-                               (col("month") == month_val)))
-                    
-                    # Processar em batches de dias
-                    days = treino_month.select("day").distinct().collect()
-                    
-                    for day_row in days:
-                        day_val = day_row['day']
-                        
-                        # Processar um dia
-                        treino_day = treino_month.filter(col("day") == day_val)
-                        treino_indexed = self.user_indexer.transform(treino_day)
-                        
-                        # Criar interações
-                        interactions = self.create_interaction_matrix(treino_indexed)
-                        
-                        # Salvar por dia
-                        interactions_output = f"{config.gold_path_interactions}/year={year_val}/month={month_val}/day={day_val}"
-                        
-                        self.log_step(f"Salvando interações em {interactions_output}")
-                        (interactions.write
-                            .mode("overwrite")
-                            .option("compression", "snappy")
-                            .parquet(interactions_output))
-                        self.log_step(f"Interações salvas com sucesso")
-                        
-                        # Limpar cache e forçar GC
-                        self.spark.catalog.clearCache()
-                        gc.collect()
-                        
-                        # Opcionalmente, limpar arquivos temporários
-                        temp_dir = "/tmp/spark-temp"
-                        if os.path.exists(temp_dir):
-                            shutil.rmtree(temp_dir)
-                    
-                    # Forçar GC após cada mês
-                    gc.collect()
-            
-            # 4. Processar features dos itens em batches
-            window_spec = Window.orderBy("page")
-            items_batched = items_df.withColumn("batch_id", row_number().over(window_spec) % 10)
-            
-            for batch_id in range(10):
-                items_batch = items_batched.filter(col("batch_id") == batch_id)
-                items_indexed = self.page_indexer.transform(items_batch)
-                item_features = self.prepare_item_features(items_indexed)
-                
-                (item_features.write
-                    .mode("append" if batch_id > 0 else "overwrite")
-                    .parquet(f"{output_path}/item_features"))
-                
-                self.spark.catalog.clearCache()
-            
-            # 5. Salvar mapeamentos
-            (self.user_indexer.write()
-                .overwrite()
-                .save(f"{output_path}/user_indexer"))
-            
-            (self.page_indexer.write()
-                .overwrite()
-                .save(f"{output_path}/page_indexer"))
-            
-            return {
-                "n_users": treino_df.select("userId").distinct().count(),
-                "n_items": items_df.select("page").distinct().count()
-            }
-            
-        except Exception as e:
-            self.log_step(f"Error in matrices preparation: {str(e)}")
-            raise 
+        # Join com alias para evitar ambiguidade
+        enriched_df = treino_df.alias("treino") \
+            .join(advanced_df.alias("advanced"), 
+                  on=["userId", "history"], 
+                  how="left")
+        
+        # Features do usuário atualizadas
+        user_features = enriched_df.select(
+            col("treino.userId"),
+            col("treino.userType"),
+            # Features temporais
+            'avg_time_between_reads',
+            'reading_velocity',
+            # Features de engajamento
+            'engagement_score',
+            'normalized_time',
+            'normalized_scroll',
+            # Features de sequência
+            'items_in_session',
+            'session_diversity',
+            # Features de tendências
+            'trend_score',
+            # Features contextuais
+            'typical_hours',  # Mantendo apenas as features que existem
+            # Features calculadas
+            'recency_score'
+        ).distinct()
+        
+        # 2. Features do Item
+        item_features = items_df.join(
+            enriched_df.groupBy('history').agg(
+                avg('engagement_score').alias('avg_engagement'),
+                avg('recency_score').alias('avg_recency')
+            ),
+            items_df.page == enriched_df.history,
+            'left'
+        )
+        
+        # 3. Matriz de Interações
+        interactions = enriched_df.select(
+            'userId',
+            'history',
+            # Peso da interação baseado nas features avançadas
+            (col('engagement_score') * 
+             col('recency_score') * 
+             when(col('above_avg_engagement'), 1.2).otherwise(1.0)
+            ).alias('interaction_weight')
+        )
+        
+        # Salvar as matrizes processadas
+        user_features.write.mode("overwrite").parquet(f"{output_path}/user_features")
+        item_features.write.mode("overwrite").parquet(f"{output_path}/item_features")
+        interactions.write.mode("overwrite").parquet(f"{output_path}/interactions")
+        
+        return {
+            "n_users": user_features.select("userId").distinct().count(),
+            "n_items": item_features.select("page").distinct().count(),
+            "n_interactions": interactions.count()
+        }
 
 class FeatureValidator:
     def __init__(self):

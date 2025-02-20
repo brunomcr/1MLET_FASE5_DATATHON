@@ -8,18 +8,17 @@ services:
       - ./:/app
       - ./datalake:/app/datalake
     environment:
-      - SPARK_LOCAL_IP=127.0.0.1
       - PYTHONUNBUFFERED=1
-      - SPARK_DRIVER_MEMORY=8g
-      - SPARK_EXECUTOR_MEMORY=6g
+      - SPARK_WORKER_CORES=8
+      - SPARK_EXECUTOR_CORES=8
+      - SPARK_DEFAULT_PARALLELISM=16
     deploy:
       resources:
         limits:
           memory: 10g
-          cpus: '4'
-    tmpfs:
-      - /tmp:exec,size=100G  # Aumentar de 50G para 100G
-    user: "${UID}:${GID}"  # Usar mesmo usuário do host
+          cpus: '8'
+    networks:
+      - spark_network
 
   jupyter:
     build:
@@ -67,3 +66,7 @@ services:
         limits:
           memory: 6g
           cpus: '4'
+
+networks:
+  spark_network:
+    driver: bridge

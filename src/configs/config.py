@@ -18,9 +18,16 @@ class Config:
         self.gold_path_interactions = f"{self.gold_path_matrices}/interactions"
         self.gold_path_item_features = f"{self.gold_path_matrices}/item_features"
         self.gold_path_models = f"{self.gold_path}/models"
+        self.gold_path_advanced_features = f"{self.gold_path}/advanced_features"
 
         # Caminhos específicos para treino
         self.train_interactions_path = f"{self.gold_path_interactions}/year=2022/month=7/day=1"
+
+        # Caminhos específicos para features
+        self.temporal_features_path = f"{self.gold_path_advanced_features}/temporal"
+        self.engagement_features_path = f"{self.gold_path_advanced_features}/engagement"
+        self.sequence_features_path = f"{self.gold_path_advanced_features}/sequence"
+        self.recency_features_path = f"{self.gold_path_advanced_features}/recency"
 
         # Arquivo de download
         self.output_file = f"{self.bronze_path}/challenge-webmedia-e-globo-2023.zip"

@@ -5,6 +5,7 @@ from services.spark_session import SparkSessionFactory
 from services.pre_process import BronzeToSilverTransformer
 from services.text_processor import TextProcessor
 from services.feature_engineering import FeatureEngineering
+from services.advanced_features import AdvancedFeatureEngineering
 from configs.config import Config
 import os
 import gc
@@ -29,101 +30,99 @@ def check_data_exists(config):
 
 def main():
     logger.info("Starting ETL process...")
-
     config = Config()
 
     # Criar diretórios necessários
     os.makedirs(config.bronze_path, exist_ok=True)
     logger.info(f"Created directory: {config.bronze_path}")
 
-    # Baixar o arquivo
-    downloader = Downloader()
-    downloader.download_file(
-        config.download_url,
-        config.output_file
-    )
+    # # Baixar o arquivo
+    # print("**************************************************")
+    # print("ETAPA 0: Download Files **************************")
+    # print("**************************************************")
+    # downloader = Downloader()
+    # downloader.download_file(
+    #     config.download_url,
+    #     config.output_file
+    # )
 
-    # Descompactar e deletar o .zip
-    file_handler = FileHandler()
-    file_handler.unzip_and_delete(config.output_file, config.bronze_path)
+    # # Descompactar e deletar o .zip
+    # print("**************************************************")
+    # print("ETAPA 0: Unzip Files *****************************")
+    # print("**************************************************")
+    # file_handler = FileHandler()
+    # file_handler.unzip_and_delete(config.output_file, config.bronze_path)
 
-    # # Etapa 1: Processamento Bronze to Silver
-    logger.info("Starting Bronze to Silver transformation...")
-    spark_session = SparkSessionFactory().create_spark_session("Bronze to Silver ETL")
+    # # Etapa 1: Bronze to Silver + Normalização
+    # print("**************************************************")
+    # print("ETAPA 1: Bronze to Silver + Normalização *********")
+    # print("**************************************************")
+    # spark_session = SparkSessionFactory().create_spark_session("Bronze to Silver ETL")
+    # try:
+    #     transformer = BronzeToSilverTransformer(spark_session)
+        
+    #     # 1.1 Transformação básica
+    #     transformer.transform_treino(config.bronze_path, config.silver_path_treino)
+    #     transformer.transform_itens(config.bronze_path, config.silver_path_itens)
+        
+    #     # 1.2 Normalização
+    #     transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
+    #     transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
+    # finally:
+    #     spark_session.stop()
+    #     gc.collect()
 
+
+    # # Etapa 2: Processamento de Texto
+    # print("**************************************************")
+    # print("ETAPA 2: Processamento de Texto ******************")
+    # print("**************************************************")
+    # spark_session = SparkSessionFactory().create_spark_session("Text Processing")
+    # try:
+    #     text_processor = TextProcessor(spark_session)
+    #     text_processor.process_itens(
+    #         input_path=config.silver_path_itens_normalized,
+    #         output_path=config.silver_path_itens_embeddings
+    #     )
+    # finally:
+    #     spark_session.stop()
+    #     gc.collect()
+
+    # Etapa 3: Feature Engineering Avançado
+    print("**************************************************")
+    print("ETAPA 3: Feature Engineering Avançado ************")
+    print("**************************************************")
+    spark_session = SparkSessionFactory().create_spark_session("Advanced Features")
     try:
-        transformer = BronzeToSilverTransformer(spark_session)
-
-        # Transformar dados
-        logger.info("Starting Treino transformation...")
-        transformer.transform_treino(config.bronze_path, config.silver_path_treino)
-
-        logger.info("Starting Itens transformation...")
-        transformer.transform_itens(config.bronze_path, config.silver_path_itens)
-
-        # Normalizar dados
-        logger.info("Starting Treino normalization...")
-        transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
-
-        logger.info("Starting Itens normalization...")
-        try:
-            transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
-            spark_session.catalog.clearCache()
-        except Exception as e:
-            logger.error(f"Error saving normalized data: {str(e)}")
-            raise
-    finally:
-        logger.info("Stopping first Spark session...")
-        spark_session.stop()
-        time.sleep(5)
-        gc.collect()
-
-    # Etapa 2: Processamento de Texto
-    logger.info("Starting Text processing...")
-    spark_session = SparkSessionFactory().create_spark_session("Text Processing")
-
-    try:
-        text_processor = TextProcessor(spark_session)
-
-        # Processar dados
-        text_processor.process_itens(
-            input_path=config.silver_path_itens,
-            output_path=config.silver_path_itens_embeddings
+        advanced_features = AdvancedFeatureEngineering(spark_session)
+        features_df = advanced_features.process_features(
+            treino_df=spark_session.read.parquet(config.silver_path_treino_normalized),
+            items_df=spark_session.read.parquet(config.silver_path_itens_embeddings)
         )
-
-        # Validar resultados
-        text_processor.validate_results(config.silver_path_itens_embeddings)
-
-    except Exception as e:
-        logger.error(f"Error in Text processing: {str(e)}")
-        raise
+        
+        features_df.write.mode("overwrite") \
+            .partitionBy("year", "month", "day") \
+            .parquet(config.gold_path_advanced_features)
     finally:
-        logger.info("Stopping Spark session...")
         spark_session.stop()
-        time.sleep(5)
         gc.collect()
 
-    # Etapa 3: Feature Engineering para LightFM
-    logger.info("Starting Feature Engineering for LightFM...")
-    spark_session = SparkSessionFactory().create_spark_session("Feature Engineering")
-
+    # Etapa 4: Preparação Final para LightFM
+    print("**************************************************")
+    print("ETAPA 4: Preparação Final para LightFM ***********")
+    print("**************************************************")
+    spark_session = SparkSessionFactory().create_spark_session("LightFM Prep")
     try:
         feature_engineering = FeatureEngineering(spark_session)
         stats = feature_engineering.prepare_lightfm_matrices(
             treino_path=config.silver_path_treino_normalized,
             items_path=config.silver_path_itens_embeddings,
+            advanced_features_path=config.gold_path_advanced_features,
             output_path=config.gold_path_matrices
         )
-
         logger.info(f"Feature Engineering completed with stats: {stats}")
-
-    except Exception as e:
-        logger.error(f"Error in Feature Engineering: {str(e)}")
-        raise
     finally:
-        logger.info("Stopping Spark session...")
         spark_session.stop()
-        time.sleep(5)
         gc.collect()
 
 
