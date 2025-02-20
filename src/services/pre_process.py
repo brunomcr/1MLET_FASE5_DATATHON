@@ -122,7 +122,7 @@ class BronzeToSilverTransformer:
             "adjusted_score", col("interaction_score") * col("recency_weight") * col("time_weight")
         )
         self.log_step("Adding partition columns...")
-        df = df_normalized \
+        df = df_temporal \
             .withColumn("timestamp", from_unixtime(col("timestampHistory"))) \
             .withColumn("year", year(col("timestamp"))) \
             .withColumn("month", month(col("timestamp"))) \
