@@ -3,15 +3,16 @@ import time
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, explode, split, arrays_zip, from_unixtime, to_timestamp, regexp_replace,
-    hour, dayofweek, month, current_timestamp, lag, avg, min, max, log1p, udf, trim, concat_ws, year, month , dayofmonth, monotonically_increasing_id
+    hour, dayofweek, month, current_timestamp, lag, avg, min, max, log1p, udf, trim, concat_ws, year, month, dayofmonth,
+    monotonically_increasing_id
 )
 from pyspark.sql.window import Window
 from pyspark.sql.types import DoubleType, ArrayType, FloatType
 from pyspark.ml.feature import MinMaxScaler, VectorAssembler
 from pyspark.ml import Pipeline
-import fasttext  # Biblioteca fastText para Python
 from services.spark_session import SparkSessionFactory
 import gc
+
 
 class BronzeToSilverTransformer:
     def __init__(self, spark=None):
@@ -49,99 +50,20 @@ class BronzeToSilverTransformer:
             df = df.withColumn(column, trim(col(column)))
         return df
 
-    def apply_fasttext_embedding(self, df, ft_model_path):
-        """
-        Aplica embeddings do FastText com salvamento incremental
-        """
-        self.log_step("Setting up fastText UDF with lazy loading...")
-
-        def get_fasttext_embedding(text, max_retries=3):
-            if text is None or not text:
-                return [0.0] * 100
-            
-            text = text[:300]
-            
-            for attempt in range(max_retries):
-                try:
-                    global _ft_model_local
-                    if '_ft_model_local' not in globals():
-                        _ft_model_local = fasttext.load_model(ft_model_path)
-                    return _ft_model_local.get_sentence_vector(text).tolist()
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        return [0.0] * 100
-                    time.sleep(0.1)
-        
-        embedding_udf = udf(get_fasttext_embedding, ArrayType(FloatType()))
-        
-        self.log_step("Processing embeddings in batches...")
-        
-        window_size = 200
-        num_partitions = 4
-        
-        # Reparticionamento inicial
-        df = df.repartition(num_partitions)
-        df = df.withColumn("row_number", monotonically_increasing_id())
-        df = df.withColumn("batch_id", (col("row_number") / window_size).cast("int"))
-        
-        batch_count = df.select("batch_id").distinct().count()
-        self.log_step(f"Total number of batches: {batch_count}")
-        
-        # Criar diretório temporário para resultados intermediários
-        temp_output_path = "temp_embeddings"
-        
-        for batch in range(int(batch_count)):
-            try:
-                self.log_step(f"Processing batch {batch + 1} of {batch_count}")
-                
-                batch_df = df.filter(col("batch_id") == batch)
-                
-                current_batch = batch_df.withColumn(
-                    "fasttext_embedding",
-                    embedding_udf(col("title"))
-                )
-                
-                # Remover colunas temporárias antes de salvar
-                current_batch = current_batch.drop("row_number", "batch_id")
-                
-                # Salvar batch atual
-                current_batch.write.mode("append").parquet(f"{temp_output_path}/batch_{batch}")
-                
-                # Limpar cache a cada 5 batches
-                if batch % 5 == 0:
-                    self.spark.catalog.clearCache()
-                    gc.collect()  # Forçar garbage collection
-                
-            except Exception as e:
-                self.log_step(f"Error processing batch {batch + 1}: {str(e)}")
-                continue
-        
-        # Ler todos os resultados salvos
-        self.log_step("Combining all processed batches...")
-        result_df = self.spark.read.parquet(f"{temp_output_path}/batch_*")
-        
-        # Otimizar particionamento final
-        result_df = result_df.coalesce(num_partitions)
-        
-        # Limpar diretório temporário
-        self.spark.sparkContext.hadoop.fs.delete(temp_output_path, True)
-        
-        return result_df
-
     def transform_treino(self, input_path: str, output_path: str):
         self.log_step("Starting 'Treino' transformation...")
         file_path = f"{input_path}/files/treino/"
         self.log_step(f"Reading CSV files from {file_path}...")
-        
+
         df = self.spark.read.option("header", "true") \
             .option("quote", "\"") \
             .option("escape", "\"") \
             .option("multiLine", "true") \
             .option("inferSchema", "true") \
             .csv(file_path).repartition(4)
-        
+
         self.log_step("Finished reading CSV files.")
-        
+
         self.log_step("Splitting and transforming columns...")
         cols_to_split = [
             "history", "timestampHistory", "numberOfClicksHistory",
@@ -173,7 +95,7 @@ class BronzeToSilverTransformer:
             .withColumn("month", month(from_unixtime(col("timestampHistory"))))
         window_spec = Window.partitionBy("userId").orderBy("timestampHistory")
         df_temporal = df_temporal.withColumn("time_since_last_interaction",
-                                            col("timestampHistory") - lag("timestampHistory").over(window_spec)) \
+                                             col("timestampHistory") - lag("timestampHistory").over(window_spec)) \
             .fillna(0, subset=["time_since_last_interaction"])
         first_interaction = df_temporal.groupBy("userId").agg(min("timestampHistory").alias("first_interaction"))
         df_temporal = df_temporal.join(first_interaction, on="userId", how="left") \
@@ -206,72 +128,72 @@ class BronzeToSilverTransformer:
             .withColumn("month", month(col("timestamp"))) \
             .withColumn("day", dayofmonth(col("timestamp"))) \
             .drop("timestamp")  # Remove a coluna temporária
-        
+
         self.log_step("Writing partitioned Parquet files for treino...")
         df.write.mode("overwrite") \
-               .option("compression", "snappy") \
-               .option("maxRecordsPerFile", "10000") \
-               .partitionBy("year", "month", "day") \
-               .parquet(output_path)
+            .option("compression", "snappy") \
+            .option("maxRecordsPerFile", "10000") \
+            .partitionBy("year", "month", "day") \
+            .parquet(output_path)
         self.log_step("'Treino' transformation completed and data saved.")
 
     def transform_itens(self, input_path: str, output_path: str):
         self.log_step("Starting 'Itens' transformation...")
         file_path = f"{input_path}/itens/itens/"
         self.log_step(f"Reading CSV files from {file_path}...")
-        
+
         df = self.spark.read.option("header", "true") \
             .option("quote", "\"") \
             .option("escape", "\"") \
             .option("multiLine", "true") \
             .option("inferSchema", "true") \
             .csv(file_path).repartition(4)
-        
+
         self.log_step("Finished reading CSV files.")
-        
+
         self.log_step("Cleaning up timestamp columns...")
         df = df.withColumn("issued", regexp_replace(col("issued"), r"\+00:00", "")) \
-               .withColumn("modified", regexp_replace(col("modified"), r"\+00:00", ""))
-        
+            .withColumn("modified", regexp_replace(col("modified"), r"\+00:00", ""))
+
         self.log_step("Converting strings to timestamp columns...")
         df = df.withColumn("issued", to_timestamp(col("issued"), "yyyy-MM-dd HH:mm:ss")) \
-               .withColumn("modified", to_timestamp(col("modified"), "yyyy-MM-dd HH:mm:ss"))
-        
+            .withColumn("modified", to_timestamp(col("modified"), "yyyy-MM-dd HH:mm:ss"))
+
         self.log_step("Cleaning text columns (title, body, caption)...")
         df = self.clean_text_columns(df)
-        
+
         self.log_step("Dropping unused columns...")
         df = df.drop("url")
         df = df.drop("body")
         df = df.drop("caption")
-        
+
         self.log_step("Adding partition columns...")
         df = df.withColumn("year", year(col("issued"))) \
-               .withColumn("month", month(col("issued"))) \
-               .withColumn("day", dayofmonth(col("issued")))
-        
+            .withColumn("month", month(col("issued"))) \
+            .withColumn("day", dayofmonth(col("issued")))
+
         self.log_step("Writing partitioned Parquet files for itens...")
         df.write.mode("overwrite") \
-               .option("compression", "snappy") \
-               .option("maxRecordsPerFile", "10000") \
-               .partitionBy("year", "month", "day") \
-               .parquet(output_path)
-        
+            .option("compression", "snappy") \
+            .option("maxRecordsPerFile", "10000") \
+            .partitionBy("year", "month", "day") \
+            .parquet(output_path)
+
         self.log_step("'Itens' transformation completed and data saved.")
 
     def normalize_treino(self, input_path: str, output_path: str):
         self.log_step("Starting treino normalization...")
         df = self.spark.read.parquet(input_path)
-        
+
         self.log_step("Applying log1p transformation...")
         log_columns = ["timeOnPageHistory", "time_since_last_interaction", "time_since_first_interaction"]
         for col_name in log_columns:
             if col_name in df.columns:
                 df = df.withColumn(col_name, log1p(col(col_name)))
-        
+
         self.log_step("Applying MinMaxScaler for treino...")
-        minmax_columns = ["numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory", 
-                         "hour", "dayofweek", "month"]
+        minmax_columns = ["numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory",
+                          "hour", "dayofweek", "month"]
         for col_name in minmax_columns:
             if col_name in df.columns:
                 assembler = VectorAssembler(inputCols=[col_name], outputCol=f"{col_name}_vec")
@@ -281,37 +203,37 @@ class BronzeToSilverTransformer:
                 df = model.transform(df)
                 df = df.withColumn(col_name, self.extract_scalar_udf(col(f"{col_name}_scaled")))
                 df = df.drop(f"{col_name}_vec").drop(f"{col_name}_scaled")
-        
+
         self.log_step("Adding partition columns...")
         df = df.withColumn("timestamp", from_unixtime(col("timestampHistory"))) \
-               .withColumn("year", year(col("timestamp"))) \
-               .withColumn("month", month(col("timestamp"))) \
-               .withColumn("day", dayofmonth(col("timestamp"))) \
-               .drop("timestamp")
-        
+            .withColumn("year", year(col("timestamp"))) \
+            .withColumn("month", month(col("timestamp"))) \
+            .withColumn("day", dayofmonth(col("timestamp"))) \
+            .drop("timestamp")
+
         self.log_step("Saving normalized treino dataset with partitioning...")
         try:
             df.write.mode("overwrite") \
-               .option("compression", "snappy") \
-               .option("maxRecordsPerFile", "10000") \
-               .partitionBy("year", "month", "day") \
-               .parquet(output_path)
+                .option("compression", "snappy") \
+                .option("maxRecordsPerFile", "10000") \
+                .partitionBy("year", "month", "day") \
+                .parquet(output_path)
         except Exception as e:
             self.log_step(f"Error saving normalized data: {str(e)}")
             raise
-        
+
         self.log_step("Treino normalization completed!")
 
     def normalize_itens(self, input_path: str, output_path: str):
         self.log_step("Starting itens normalization...")
         df = self.spark.read.parquet(input_path)
-        
+
         self.log_step("Applying log1p transformation for itens...")
         log_columns = ["days_since_published", "days_since_modified"]
         for col_name in log_columns:
             if col_name in df.columns:
                 df = df.withColumn(col_name, log1p(col(col_name)))
-        
+
         self.log_step("Applying MinMaxScaler for itens...")
         minmax_columns = ["days_since_published", "days_since_modified"]
         for col_name in minmax_columns:
@@ -323,12 +245,12 @@ class BronzeToSilverTransformer:
                 df = model.transform(df)
                 df = df.withColumn(col_name, self.extract_scalar_udf(col(f"{col_name}_scaled")))
                 df = df.drop(f"{col_name}_vec").drop(f"{col_name}_scaled")
-        
+
         self.log_step("Saving normalized itens dataset with partitioning...")
         df.write.mode("overwrite") \
-               .option("compression", "snappy") \
-               .option("maxRecordsPerFile", "10000") \
-               .partitionBy("year", "month", "day") \
-               .parquet(output_path)
-        
+            .option("compression", "snappy") \
+            .option("maxRecordsPerFile", "10000") \
+            .partitionBy("year", "month", "day") \
+            .parquet(output_path)
+
         self.log_step("Itens normalization completed!")
