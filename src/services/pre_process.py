@@ -159,6 +159,12 @@ class BronzeToSilverTransformer:
         df = df.withColumn("issued", to_timestamp(col("issued"), "yyyy-MM-dd HH:mm:ss")) \
             .withColumn("modified", to_timestamp(col("modified"), "yyyy-MM-dd HH:mm:ss"))
 
+        self.log_step("Calculating days since published and modified...")
+        df = df.withColumn("days_since_published",
+                           ((current_timestamp().cast("long") - col("issued").cast("long")) / 86400).cast("int")) \
+            .withColumn("days_since_modified",
+                        ((current_timestamp().cast("long") - col("modified").cast("long")) / 86400).cast("int"))
+
         self.log_step("Cleaning text columns (title, body, caption)...")
         df = self.clean_text_columns(df)
 
