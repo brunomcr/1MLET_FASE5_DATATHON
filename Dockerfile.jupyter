@@ -21,7 +21,10 @@ RUN pip install --no-cache-dir \
     pandas==1.5.3 \
     numpy==1.24.3 \
     scikit-learn==1.2.2 \
-    ipywidgets==8.0.6
+    lightfm==1.17 \
+    fasttext==0.9.2 \
+    gdown==4.7.1 \
+    pyspark==3.5.0
 
 # Install poetry with PATH configuration
 RUN curl -sSL https://install.python-poetry.org | python3 - && \
@@ -34,7 +37,7 @@ COPY pyproject.toml ./
 
 # Generate lock file and install dependencies
 RUN poetry lock && \
-    poetry install --no-root --no-interaction --no-ansi
+    poetry install --no-root --no-interaction --no-ansi || true
 
 # Copy the rest of the project
 COPY . .

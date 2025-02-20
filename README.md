@@ -1,9 +1,53 @@
-# 1MLET_FASE5_DATATHON
+# Datathon - News Recommendation System
+
+This project was developed as part of Datathon Phase 5 and aims to build a news recommendation system using data from the G1 portal, predicting which news articles a user is likely to read next.
+
+**Challenge**
+
+Content recommendation is essential for media platforms due to the vast amount of information generated daily. In the case of news, challenges such as recency and cold-start must be considered:
+
+- Cold-start: How to recommend news for new users or when there is limited data available?
+- Recency: How to ensure that recommendations are relevant, considering that older news articles may no longer be useful?
+
+**Project Objectives**
+
+The recommendation system should:
+
+1. Train a model to predict which news articles a user will consume.
+2. Save the trained model for future use.
+3. Create an API to serve recommendations.
+4. Package the solution with Docker for easy deployment.
+5. Test and validate the API’s predictions.
+6. Deploy locally or in the cloud (optional).
+
+**About the Data**
+
+The dataset is divided into training and validation sets.
+
+**Training Data**
+
+The treino_parte_X.csv files contain information about user interactions with news articles, including:
+
+- userId: User identification.
+- history: List of previously read news articles.
+- TimestampHistory: Time of reading.
+- scrollPercentageHistory: Percentage of the page viewed.
+- pageVisitsCountHistory: Number of visits to the same article.
+
+Additionally, there is a subfolder containing details about the news articles:
+
+- Page (Article ID), Title, Body, Issued (publication date), Modified (last modification).
 
 
-# Data Analysis Pipeline with PySpark
+**Validation Data**
 
-This project implements an ETL (Extract, Transform, Load) pipeline and data analysis environment using PySpark, containerized with Docker.
+Captures interactions from a period after the training set, including:
+
+- userId
+- userType (logged-in or anonymous)
+- history (news articles to be recommended)
+
+The goal is to predict the user’s next interactions based on their browsing history.
 
 ## Overview
 
