@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, regexp_replace, lower, explode, split, year, month, dayofmonth
+from pyspark.sql.functions import col, regexp_replace, lower, explode, split, year, month, dayofmonth, trim
 from pyspark.ml.feature import Tokenizer, StopWordsRemover, HashingTF, IDF
 from pyspark.ml import Pipeline
 from utils.logger import logger
@@ -26,12 +26,26 @@ class TFIDFProcessor:
         """Preprocess the text data by cleaning and normalizing."""
         logger.info("Starting text preprocessing...")
 
-        # Clean and normalize text
+        # Clean and normalize text in the 'page' column and create 'cleaned_text'
         df = df.withColumn("cleaned_text",
-                           lower(
-                               regexp_replace(col("page"), r'[^A-Za-z0-9\s]', '')  # Remove special characters
-                           )
-                           )
+                           trim(
+                               lower(
+                                   regexp_replace(
+                                       regexp_replace(
+                                           regexp_replace(
+                                               regexp_replace(
+                                                   col("title"),
+                                                   r'(https?:\/\/\S+)|(www\.\S+)', ''  # Remove URLs
+                                               ),
+                                               r'<[^>]+>', ''  # Remove tags HTML
+                                           ),
+                                           r'[^A-Za-z0-9ÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇáéíóúàèìòùâêîôûãõç\s!"#$%&\'()*+,\-./:;<=>?@\[\]\\^_`{|}~]', ''  # Remove caracteres especiais
+                                       ),
+                                       r'\s+', ' '  # Substitui múltiplos espaços por um único espaço
+                                   )
+                               )
+                           ) # Remove espaços em branco no início e final
+        )
 
         logger.info("Text preprocessing completed.")
         return df
@@ -62,7 +76,7 @@ class TFIDFProcessor:
         logger.info("TF-IDF application completed.")
         return tfidf_df
 
-    def process(self):
+    def process(self, output_path):
         """Main method to process the TF-IDF."""
         logger.info("Starting TF-IDF processing...")
 
@@ -84,7 +98,6 @@ class TFIDFProcessor:
             year_df = tfidf_df.filter(col("year") == year_val)
 
             # Save by year
-            output_path = f"{self.config.gold_path}/tfidf_features"
             logger.info(f"Saving data for year {year_val}...")
             (year_df
              .write

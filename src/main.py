@@ -85,8 +85,9 @@ def main():
     try:
         text_processor = TFIDFProcessor(spark_session)
 
-        # Processar dados
-        text_processor.process()
+        # Processar dados, passando o caminho de saída
+        output_path = f"{config.silver_path_itens_tfidf}"
+        text_processor.process(output_path)
 
     except Exception as e:
         logger.error(f"Error in Text processing: {str(e)}")
@@ -97,28 +98,28 @@ def main():
         time.sleep(5)
         gc.collect()
 
-    # Etapa 3: Feature Engineering para LightFM
-    logger.info("Starting Feature Engineering for LightFM...")
-    spark_session = SparkSessionFactory().create_spark_session("Feature Engineering")
-
-    try:
-        feature_engineering = FeatureEngineering(spark_session)
-        stats = feature_engineering.prepare_lightfm_matrices(
-            treino_path=config.silver_path_treino_normalized,
-            items_path=config.silver_path_itens_embeddings,
-            output_path=config.gold_path_matrices
-        )
-
-        logger.info(f"Feature Engineering completed with stats: {stats}")
-
-    except Exception as e:
-        logger.error(f"Error in Feature Engineering: {str(e)}")
-        raise
-    finally:
-        logger.info("Stopping Spark session...")
-        spark_session.stop()
-        time.sleep(5)
-        gc.collect()
+    # # Etapa 3: Feature Engineering para LightFM
+    # logger.info("Starting Feature Engineering for LightFM...")
+    # spark_session = SparkSessionFactory().create_spark_session("Feature Engineering")
+    #
+    # try:
+    #     feature_engineering = FeatureEngineering(spark_session)
+    #     stats = feature_engineering.prepare_lightfm_matrices(
+    #         treino_path=config.silver_path_treino_normalized,
+    #         items_path=config.silver_path_itens_embeddings,
+    #         output_path=config.gold_path_matrices
+    #     )
+    #
+    #     logger.info(f"Feature Engineering completed with stats: {stats}")
+    #
+    # except Exception as e:
+    #     logger.error(f"Error in Feature Engineering: {str(e)}")
+    #     raise
+    # finally:
+    #     logger.info("Stopping Spark session...")
+    #     spark_session.stop()
+    #     time.sleep(5)
+    #     gc.collect()
 
 
 if __name__ == "__main__":

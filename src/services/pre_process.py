@@ -28,28 +28,6 @@ class BronzeToSilverTransformer:
     def log_step(self, message):
         logger.info(message)
 
-    def clean_text_columns(self, df):
-        text_columns = ["title", "body", "caption"]
-        for column in text_columns:
-            # Remove URLs
-            df = df.withColumn(column, regexp_replace(col(column), r'(https?:\/\/\S+)|(www\.\S+)', ''))
-            # Remove tags HTML
-            df = df.withColumn(column, regexp_replace(col(column), r'<[^>]+>', ''))
-            # Remove caracteres especiais indesejados, mantendo letras, números e pontuações comuns
-            df = df.withColumn(
-                column,
-                regexp_replace(
-                    col(column),
-                    r'[^A-Za-z0-9ÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÃÕÇáéíóúàèìòùâêîôûãõç\s!"#$%&\'()*+,\-./:;<=>?@\[\]\\^_`{|}~]',
-                    ''
-                )
-            )
-            # Substitui múltiplos espaços por um único espaço
-            df = df.withColumn(column, regexp_replace(col(column), r'\s+', ' '))
-            # Remove espaços em branco no início e final
-            df = df.withColumn(column, trim(col(column)))
-        return df
-
     def transform_treino(self, input_path: str, output_path: str):
         self.log_step("Starting 'Treino' transformation...")
         file_path = f"{input_path}/files/treino/"
@@ -164,9 +142,6 @@ class BronzeToSilverTransformer:
                            ((current_timestamp().cast("long") - col("issued").cast("long")) / 86400).cast("int")) \
             .withColumn("days_since_modified",
                         ((current_timestamp().cast("long") - col("modified").cast("long")) / 86400).cast("int"))
-
-        self.log_step("Cleaning text columns (title, body, caption)...")
-        df = self.clean_text_columns(df)
 
         self.log_step("Dropping unused columns...")
         df = df.drop("url")
