@@ -13,14 +13,10 @@ class Config:
         self.silver_path_itens_normalized = f"{self.silver_path}/itens_normalized"
         self.silver_path_itens_embeddings = f"{self.silver_path}/itens_embeddings"
 
-
         # Caminhos Gold
-        self.gold_path_interactions = f"{self.gold_path}/interactions"
-        self.gold_path_item_features = f"{self.gold_path}/item_features"
-        self.gold_path_models = f"{self.gold_path}/models"
-
-        # Caminhos específicos para treino
-        self.train_interactions_path = f"{self.gold_path_interactions}/year=2022/month=7/day=1"
+        self.gold_path_lightfm_interactions = f"{self.gold_path}/lightfm_interactions"
+        self.gold_path_lightfm_user_features = f"{self.gold_path}/lightfm_user_features"
+        self.gold_path_lightfm_item_features = f"{self.gold_path}/lightfm_item_features"
 
         # Arquivo de download
         self.output_file = f"{self.bronze_path}/challenge-webmedia-e-globo-2023.zip"
