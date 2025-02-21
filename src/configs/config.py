@@ -12,10 +12,9 @@ class Config:
         self.silver_path_treino_normalized = f"{self.silver_path}/treino_normalized"
         self.silver_path_itens_normalized = f"{self.silver_path}/itens_normalized"
         self.silver_path_itens_embeddings = f"{self.silver_path}/itens_embeddings"
-        self.silver_path_itens_tfidf = f"{self.silver_path}/itens/tfidf"
+
 
         # Caminhos Gold
-        #self.gold_path_matrices = f"{self.gold_path}/matrices"
         self.gold_path_interactions = f"{self.gold_path}/interactions"
         self.gold_path_item_features = f"{self.gold_path}/item_features"
         self.gold_path_models = f"{self.gold_path}/models"
