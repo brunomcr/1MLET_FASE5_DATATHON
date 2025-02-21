@@ -6,27 +6,28 @@ class SparkSessionFactory:
         spark = SparkSession.builder \
             .appName(app_name) \
             .config("spark.driver.memory", "8g") \
-            .config("spark.executor.memory", "6g") \
-            .config("spark.executor.cores", "2") \
-            .config("spark.python.worker.memory", "2g") \
-            .config("spark.default.parallelism", "4") \
-            .config("spark.sql.shuffle.partitions", "4") \
-            .config("spark.memory.fraction", "0.7") \
-            .config("spark.memory.storageFraction", "0.3") \
+            .config("spark.executor.memory", "8g") \
+            .config("spark.sql.shuffle.partitions", "10") \
+            .config("spark.memory.fraction", "0.8") \
+            .config("spark.sql.files.maxPartitionBytes", "128m") \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
             .config("spark.sql.adaptive.skewJoin.enabled", "true") \
+            .config("spark.driver.host", "localhost") \
+            .config("spark.driver.bindAddress", "127.0.0.1") \
+            .config("spark.network.timeout", "800s") \
+            .config("spark.cleaner.periodicGC.interval", "1min") \
+            .config("spark.sql.files.openCostInBytes", "1048576") \
+            .config("spark.sql.broadcastTimeout", "300") \
+            .config("spark.sql.parquet.filterPushdown", "true") \
             .config("spark.sql.inMemoryColumnarStorage.compressed", "true") \
-            .config("spark.sql.inMemoryColumnarStorage.batchSize", "1000") \
-            .config("spark.python.worker.reuse", "true") \
-            .config("spark.dynamicAllocation.enabled", "false") \
-            .config("spark.sql.execution.arrow.maxRecordsPerBatch", "1000") \
-            .config("spark.sql.execution.arrow.enabled", "true") \
-            .config("spark.sql.parquet.compression.codec", "snappy") \
-            .config("spark.cleaner.referenceTracking.cleanCheckpoints", "true") \
-            .config("spark.sql.files.maxPartitionBytes", "128m") \
-            .config("spark.sql.shuffle.partitions", "4") \
+            .config("spark.sql.parquet.writeLegacyFormat", "false") \
+            .config("spark.default.parallelism", "10") \
+            .master("local[*]") \
             .getOrCreate()
+        
+        # Configurar apenas logs de WARN para cima
+        spark.sparkContext.setLogLevel("WARN")
         print("Spark Session initialized.")
         return spark
 
