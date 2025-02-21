@@ -8,7 +8,7 @@ from pyspark.sql.functions import (
 )
 from pyspark.sql.window import Window
 from pyspark.sql.types import DoubleType, ArrayType, FloatType
-from pyspark.ml.feature import MinMaxScaler, VectorAssembler
+from pyspark.ml.feature import MinMaxScaler, VectorAssembler, StringIndexer
 from pyspark.ml import Pipeline
 from services.spark_session import SparkSessionFactory
 import gc
@@ -191,15 +191,26 @@ class BronzeToSilverTransformer:
         self.log_step("Starting treino normalization...")
         df = self.spark.read.parquet(input_path)
 
-        self.log_step("Applying log1p transformation...")
-        log_columns = ["timeOnPageHistory", "time_since_last_interaction", "time_since_first_interaction"]
+        # Aplicar Label Encoding na coluna userType
+        if 'userType' in df.columns:
+            indexer = StringIndexer(inputCol='userType', outputCol='userType_index')
+            df = indexer.fit(df).transform(df)
+            df = df.drop('userType').withColumnRenamed('userType_index', 'userType')  # Substituir a coluna original
+
+        # Aplicar Log Normalization
+        log_columns = [
+            "timeOnPageHistory", "time_since_last_interaction", "time_since_first_interaction",
+            "interaction_score", "recency_weight", "avg_time_on_page", "time_weight", "adjusted_score"
+        ]
         for col_name in log_columns:
             if col_name in df.columns:
                 df = df.withColumn(col_name, log1p(col(col_name)))
 
-        self.log_step("Applying MinMaxScaler for treino...")
-        minmax_columns = ["numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory",
-                          "hour", "dayofweek", "month"]
+        # Aplicar Min-Max Scaling
+        minmax_columns = [
+            "numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory",
+            "hour", "dayofweek", "first_interaction"
+        ]
         for col_name in minmax_columns:
             if col_name in df.columns:
                 assembler = VectorAssembler(inputCols=[col_name], outputCol=f"{col_name}_vec")
