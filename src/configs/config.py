@@ -5,6 +5,7 @@ class Config:
         self.bronze_path = f"{self.datalake_path}/bronze"
         self.silver_path = f"{self.datalake_path}/silver"
         self.gold_path = f"{self.datalake_path}/gold"
+        self.models_path = "/app/models"
 
         # Caminhos Silver
         self.silver_path_treino = f"{self.silver_path}/treino"

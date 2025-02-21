@@ -67,3 +67,25 @@ services:
         limits:
           memory: 6g
           cpus: '4'
+
+  model:
+    build:
+      context: .
+      dockerfile: Dockerfile.model
+    image: datathon-model
+    volumes:
+      - ./:/app
+      - ./datalake:/app/datalake
+    environment:
+      - SPARK_LOCAL_IP=127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - SPARK_DRIVER_MEMORY=8g
+      - SPARK_EXECUTOR_MEMORY=6g
+    deploy:
+      resources:
+        limits:
+          memory: 10g
+          cpus: '4'
+    tmpfs:
+      - /tmp:exec,size=100G
+    user: "${UID}:${GID}"
