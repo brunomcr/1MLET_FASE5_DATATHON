@@ -126,11 +126,12 @@ class LightFMDataPreparer:
 
         # Salvar features do usuário como .npz e Parquet
         try:
-            logger.info("Salvando as features do usuário como .npz...")
-            user_features_npz = user_features.select("userId", "user_features").toPandas().set_index("userId").values
-            user_features_csr = sp.csr_matrix(user_features_npz)  # Converter para csr_matrix
-            sp.save_npz(os.path.join(self.gold_path_lightfm_user_features, "user_features.npz"), user_features_csr)
-            logger.info("Features do usuário salvas com sucesso como .npz.")
+            # logger.info("Salvando as features do usuário como .npz...")
+            # user_features_npz = user_features.select("userId", "user_features").toPandas().set_index("userId").values
+            # user_features_npz = user_features_npz.astype(np.float32)  # Convertendo para float32
+            # user_features_csr = sp.csr_matrix(user_features_npz)  # Converter para csr_matrix
+            # sp.save_npz(os.path.join(self.gold_path_lightfm_user_features, "user_features.npz"), user_features_csr)
+            # logger.info("Features do usuário salvas com sucesso como .npz.")
 
             logger.info("Salvando as features do usuário como Parquet...")
             user_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
@@ -143,11 +144,12 @@ class LightFMDataPreparer:
 
         # Salvar features dos itens como .npz e Parquet
         try:
-            logger.info("Salvando as features dos itens como .npz...")
-            item_features_npz = item_features.select("page", "features").toPandas().set_index("page").values
-            item_features_csr = sp.csr_matrix(item_features_npz)  # Converter para csr_matrix
-            sp.save_npz(os.path.join(self.gold_path_lightfm_item_features, "item_features.npz"), item_features_csr)
-            logger.info("Features dos itens salvas com sucesso como .npz.")
+            # logger.info("Salvando as features dos itens como .npz...")
+            # item_features_npz = item_features.select("page", "features").toPandas().set_index("page").values
+            # item_features_npz = item_features_npz.astype(np.float32)  # Convertendo para float32
+            # item_features_csr = sp.csr_matrix(item_features_npz)  # Converter para csr_matrix
+            # sp.save_npz(os.path.join(self.gold_path_lightfm_item_features, "item_features.npz"), item_features_csr)
+            # logger.info("Features dos itens salvas com sucesso como .npz.")
 
             logger.info("Salvando as features dos itens como Parquet...")
             item_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
