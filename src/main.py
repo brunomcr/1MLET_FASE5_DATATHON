@@ -23,6 +23,7 @@ def check_data_exists(config):
         f"{config.silver_path_itens_normalized}/_SUCCESS"
     ]
 
+
     if all(os.path.exists(path) for path in paths):
         logger.info("Todos os dados já foram processados. Pulando processamento.")
         return True
@@ -39,6 +40,11 @@ def main():
     os.makedirs(config.silver_path, exist_ok=True)
     os.makedirs(config.gold_path, exist_ok=True)
     logger.info(f"Created directories: {config.bronze_path}, {config.silver_path}, {config.gold_path}")
+
+    # Criar diretório se não existir
+    os.makedirs(config.gold_path_lightfm_interactions, exist_ok=True)
+    os.makedirs(config.gold_path_lightfm_user_features, exist_ok=True)
+    os.makedirs(config.gold_path_lightfm_item_features, exist_ok=True)
 
     # # Baixar o arquivo
     # downloader = Downloader()

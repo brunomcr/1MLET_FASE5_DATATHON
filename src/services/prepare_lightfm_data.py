@@ -5,11 +5,13 @@ from scipy.sparse import csr_matrix
 import numpy as np
 import os
 from utils.logger import logger
+import scipy.sparse as sp
 
 
 class LightFMDataPreparer:
     def __init__(self, spark: SparkSession, silver_path_treino_normalized: str, silver_path_itens_embeddings: str,
-                 gold_path_lightfm_interactions: str, gold_path_lightfm_user_features: str, gold_path_lightfm_item_features: str):
+                 gold_path_lightfm_interactions: str, gold_path_lightfm_user_features: str,
+                 gold_path_lightfm_item_features: str):
         self.spark = spark
         self.silver_path_treino_normalized = silver_path_treino_normalized
         self.silver_path_itens_embeddings = silver_path_itens_embeddings
@@ -33,13 +35,24 @@ class LightFMDataPreparer:
         """Construir a matriz de interações usando adjusted_score."""
         logger.info("Building interaction matrix...")
 
+        # Usar rdd.zipWithIndex() para mapear IDs
         interactions = []
-        for row in treino_df.collect():
-            user_idx = user_id_map[row.userId]
-            for page in row.history:
-                if page in page_id_map:
-                    page_idx = page_id_map[page]
-                    interactions.append((user_idx, page_idx, row.adjusted_score))
+        treino_rdd = treino_df.rdd.zipWithIndex()  # Adiciona um índice a cada linha
+
+        # Processar cada partição separadamente
+        def process_partition(iterator):
+            for row, index in iterator:
+                user_idx = user_id_map[row.userId]
+                for page in row.history:
+                    if page in page_id_map:
+                        page_idx = page_id_map[page]
+                        yield (user_idx, page_idx, row.adjusted_score)
+
+        # Usar mapPartitions para processar as interações
+        interactions_rdd = treino_rdd.mapPartitions(process_partition)
+
+        # Coletar os resultados
+        interactions = interactions_rdd.collect()
 
         # Criar matriz esparsa
         interaction_matrix = csr_matrix(
@@ -103,11 +116,46 @@ class LightFMDataPreparer:
         # Criar features dos itens
         item_features = self.create_item_features(items_embeddings_df)
 
-        # Aqui você pode salvar a matriz e as features conforme necessário
-        np.save(os.path.join(self.gold_path_lightfm_interactions, "interaction_matrix.npy"), interaction_matrix.toarray())
-        user_features.write.mode("overwrite").parquet(
-            os.path.join(self.gold_path_lightfm_user_features, "user_features.parquet"))
-        item_features.write.mode("overwrite").parquet(
-            os.path.join(self.gold_path_lightfm_item_features, "item_features.parquet"))
+        # Salvar a matriz de interações como .npz
+        try:
+            logger.info("Salvando a matriz de interações como .npz...")
+            sp.save_npz(os.path.join(self.gold_path_lightfm_interactions, "interaction_matrix.npz"), interaction_matrix)
+            logger.info("Matriz de interações salva com sucesso como .npz.")
+        except Exception as e:
+            logger.error(f"Erro ao salvar a matriz de interações: {str(e)}")
+
+        # Salvar features do usuário como .npz e Parquet
+        try:
+            logger.info("Salvando as features do usuário como .npz...")
+            user_features_npz = user_features.select("userId", "user_features").toPandas().set_index("userId").values
+            user_features_csr = sp.csr_matrix(user_features_npz)  # Converter para csr_matrix
+            sp.save_npz(os.path.join(self.gold_path_lightfm_user_features, "user_features.npz"), user_features_csr)
+            logger.info("Features do usuário salvas com sucesso como .npz.")
+
+            logger.info("Salvando as features do usuário como Parquet...")
+            user_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
+                                                                                         "10000").parquet(
+                os.path.join(self.gold_path_lightfm_user_features, "user_features.parquet")
+            )
+            logger.info("Features do usuário salvas com sucesso como Parquet.")
+        except Exception as e:
+            logger.error(f"Erro ao salvar as features do usuário: {str(e)}")
+
+        # Salvar features dos itens como .npz e Parquet
+        try:
+            logger.info("Salvando as features dos itens como .npz...")
+            item_features_npz = item_features.select("page", "features").toPandas().set_index("page").values
+            item_features_csr = sp.csr_matrix(item_features_npz)  # Converter para csr_matrix
+            sp.save_npz(os.path.join(self.gold_path_lightfm_item_features, "item_features.npz"), item_features_csr)
+            logger.info("Features dos itens salvas com sucesso como .npz.")
+
+            logger.info("Salvando as features dos itens como Parquet...")
+            item_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
+                                                                                         "10000").parquet(
+                os.path.join(self.gold_path_lightfm_item_features, "item_features.parquet")
+            )
+            logger.info("Features dos itens salvas com sucesso como Parquet.")
+        except Exception as e:
+            logger.error(f"Erro ao salvar as features dos itens: {str(e)}")
 
         logger.info("Data preparation for LightFM completed.")
