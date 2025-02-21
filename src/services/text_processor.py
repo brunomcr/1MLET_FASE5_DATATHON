@@ -1,115 +1,99 @@
-from pyspark.sql.functions import col, udf, year, month, dayofmonth
-from pyspark.sql.types import ArrayType, FloatType
-from pyspark.ml.feature import HashingTF, IDF, Tokenizer, StopWordsRemover
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, regexp_replace, lower, explode, split, year, month, dayofmonth
+from pyspark.ml.feature import Tokenizer, StopWordsRemover, HashingTF, IDF
 from pyspark.ml import Pipeline
-import time
 from utils.logger import logger
-import os
+from configs.config import Config
 
-class TextProcessor:
-    def __init__(self, spark, vector_size=100):
+
+class TFIDFProcessor:
+    def __init__(self, spark: SparkSession):
         self.spark = spark
-        self.vector_size = vector_size
-        self.model = None
-        
-    def log_step(self, message):
-        logger.info(message)
-        
-    def create_pipeline(self):
-        """Criar pipeline de processamento de texto"""
-        tokenizer = Tokenizer(inputCol="title", outputCol="words")
-        
-        # Remover stopwords em português
-        remover = StopWordsRemover(inputCol="words", outputCol="filtered_words", 
-                                 stopWords=self._get_portuguese_stopwords())
-        
-        # Usar HashingTF para feature hashing (mais eficiente que CountVectorizer)
-        hashingTF = HashingTF(inputCol="filtered_words", outputCol="raw_features",
-                             numFeatures=self.vector_size)
-        
-        idf = IDF(inputCol="raw_features", outputCol="tfidf_features")
-        
-        return Pipeline(stages=[tokenizer, remover, hashingTF, idf])
-    
-    def _get_portuguese_stopwords(self):
-        """Lista de stopwords em português"""
-        # Adicionar stopwords comuns em português
-        return ["a", "o", "e", "é", "de", "do", "da", "em", "para", "com", "um", "uma", 
-                "os", "as", "que", "no", "na", "por", "mais", "das", "dos", "ao", "ou",
-                "são", "dos", "como", "mas", "foi", "ao", "ele", "dela", "esse", "essa",
-                "pelo", "pela", "até", "isso", "ela", "entre", "depois", "sem", "mesmo",
-                "aos", "seus", "quem", "nas", "me", "esse", "essa", "esses", "essas",
-                "seu", "sua", "seus", "suas", "só"]
-    
-    def process_itens(self, input_path: str, output_path: str):
-        """
-        Processa os itens da camada silver aplicando TF-IDF
-        """
-        self.log_step("Starting TF-IDF processing for items...")
-        start_time = time.time()
-        
-        try:
-            # Criar diretório de saída se não existir
-            os.makedirs(output_path, exist_ok=True)
-            
-            # Ler dados da camada silver
-            self.log_step("Reading input data...")
-            df = self.spark.read.parquet(input_path)
-            
-            # Criar e treinar pipeline
-            self.log_step("Training TF-IDF model...")
-            pipeline = self.create_pipeline()
-            self.model = pipeline.fit(df)
-            
-            # Processar em anos
-            years = df.select("year").distinct().collect()
-            for year_row in years:
-                year_val = year_row['year']
-                self.log_step(f"Processing year {year_val}...")
-                
-                year_df = df.filter(col("year") == year_val)
-                processed_year = self.model.transform(year_df)
-                
-                # Salvar por ano
-                self.log_step(f"Saving data for year {year_val}...")
-                (processed_year
-                 .write
-                 .mode("append")
-                 .option("compression", "snappy")
-                 .partitionBy("year", "month", "day")
-                 .parquet(output_path))
-                
-                # Limpar cache
-                self.spark.catalog.clearCache()
-            
-            elapsed_time = time.time() - start_time
-            self.log_step(f"Text processing completed in {elapsed_time:.2f} seconds!")
-            
-        except Exception as e:
-            self.log_step(f"Error in text processing: {str(e)}")
-            raise
+        self.config = Config()
 
-    def validate_results(self, output_path: str):
-        """
-        Validar resultados do processamento TF-IDF
-        """
-        self.log_step("Validando resultados...")
-        
-        # Ler dados processados
-        df = self.spark.read.parquet(output_path)
-        
-        # Mostrar schema
-        self.log_step("Schema dos dados processados:")
-        df.printSchema()
-        
-        # Contar registros
-        total_records = df.count()
-        self.log_step(f"Total de registros processados: {total_records}")
-        
-        # Mostrar exemplo de um registro
-        self.log_step("Exemplo de registro processado:")
-        df.select("title", "tfidf_features").show(1, truncate=False)
-        
-        # Estatísticas básicas
-        self.log_step("Distribuição por ano:")
-        df.groupBy("year").count().show() 
+        # Lista de stop words em português
+        self.portuguese_stop_words = [
+            "a", "o", "as", "os", "um", "uma", "para", "com", "de", "do", "da", "em", "no", "na",
+            "e", "que", "é", "do", "dos", "das", "se", "por", "como", "mas", "mais", "ou", "se",
+            "não", "já", "tudo", "todos", "todas", "nada", "algum", "alguma", "alguns", "algumas",
+            "quem", "onde", "quando", "como", "porque", "pelo", "pela", "pelo", "pelo", "pelo",
+            "meu", "minha", "teu", "tua", "seu", "sua", "nosso", "nossa", "deles", "delas", "isso",
+            "aquilo", "isto", "aqui", "ali", "lá", "aquela", "aquele", "aquelas", "aqueles"
+            # Adicione mais stop words conforme necessário
+        ]
+
+    def preprocess_text(self, df):
+        """Preprocess the text data by cleaning and normalizing."""
+        logger.info("Starting text preprocessing...")
+
+        # Clean and normalize text
+        df = df.withColumn("cleaned_text",
+                           lower(
+                               regexp_replace(col("page"), r'[^A-Za-z0-9\s]', '')  # Remove special characters
+                           )
+                           )
+
+        logger.info("Text preprocessing completed.")
+        return df
+
+    def apply_tfidf(self, df):
+        """Apply TF-IDF to the preprocessed text data."""
+        logger.info("Applying TF-IDF...")
+
+        # Tokenization
+        tokenizer = Tokenizer(inputCol="cleaned_text", outputCol="words")
+
+        # Remove stopwords using the custom list
+        remover = StopWordsRemover(inputCol="words", outputCol="filtered", stopWords=self.portuguese_stop_words)
+
+        # HashingTF
+        hashingTF = HashingTF(inputCol="filtered", outputCol="rawFeatures", numFeatures=300)
+
+        # IDF
+        idf = IDF(inputCol="rawFeatures", outputCol="features")
+
+        # Create a pipeline
+        pipeline = Pipeline(stages=[tokenizer, remover, hashingTF, idf])
+
+        # Fit the pipeline to the data
+        model = pipeline.fit(df)
+        tfidf_df = model.transform(df)
+
+        logger.info("TF-IDF application completed.")
+        return tfidf_df
+
+    def process(self):
+        """Main method to process the TF-IDF."""
+        logger.info("Starting TF-IDF processing...")
+
+        # Load normalized items data
+        items_df = self.spark.read.parquet(self.config.silver_path_itens_normalized)
+
+        # Preprocess text
+        preprocessed_df = self.preprocess_text(items_df)
+
+        # Apply TF-IDF
+        tfidf_df = self.apply_tfidf(preprocessed_df)
+
+        # Process and save by year
+        years = tfidf_df.select("year").distinct().collect()
+        for year_row in years:
+            year_val = year_row['year']
+            logger.info(f"Processing year {year_val}...")
+
+            year_df = tfidf_df.filter(col("year") == year_val)
+
+            # Save by year
+            output_path = f"{self.config.gold_path}/tfidf_features"
+            logger.info(f"Saving data for year {year_val}...")
+            (year_df
+             .write
+             .mode("append")
+             .option("compression", "snappy")
+             .partitionBy("year", "month", "day")
+             .parquet(output_path))
+
+            # Clear cache
+            self.spark.catalog.clearCache()
+
+        logger.info(f"TF-IDF features saved to {output_path}.")

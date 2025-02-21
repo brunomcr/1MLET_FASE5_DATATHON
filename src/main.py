@@ -3,7 +3,7 @@ from services.downloader import Downloader
 from services.file_handler import FileHandler
 from services.spark_session import SparkSessionFactory
 from services.pre_process import BronzeToSilverTransformer
-from services.text_processor import TextProcessor
+from services.text_processor import TFIDFProcessor
 from services.feature_engineering import FeatureEngineering
 from configs.config import Config
 import os
@@ -83,16 +83,10 @@ def main():
     spark_session = SparkSessionFactory().create_spark_session("Text Processing")
 
     try:
-        text_processor = TextProcessor(spark_session)
+        text_processor = TFIDFProcessor(spark_session)
 
         # Processar dados
-        text_processor.process_itens(
-            input_path=config.silver_path_itens,
-            output_path=config.silver_path_itens_embeddings
-        )
-
-        # Validar resultados
-        text_processor.validate_results(config.silver_path_itens_embeddings)
+        text_processor.process()
 
     except Exception as e:
         logger.error(f"Error in Text processing: {str(e)}")

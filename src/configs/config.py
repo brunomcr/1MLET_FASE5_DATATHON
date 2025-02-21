@@ -14,9 +14,9 @@ class Config:
         self.silver_path_itens_embeddings = f"{self.silver_path}/itens_embeddings"
 
         # Caminhos Gold
-        self.gold_path_matrices = f"{self.gold_path}/matrices"
-        self.gold_path_interactions = f"{self.gold_path_matrices}/interactions"
-        self.gold_path_item_features = f"{self.gold_path_matrices}/item_features"
+        #self.gold_path_matrices = f"{self.gold_path}/matrices"
+        self.gold_path_interactions = f"{self.gold_path}/interactions"
+        self.gold_path_item_features = f"{self.gold_path}/item_features"
         self.gold_path_models = f"{self.gold_path}/models"
 
         # Caminhos específicos para treino
