@@ -39,7 +39,8 @@ def main():
     os.makedirs(config.bronze_path, exist_ok=True)
     os.makedirs(config.silver_path, exist_ok=True)
     os.makedirs(config.gold_path, exist_ok=True)
-    logger.info(f"Created directories: {config.bronze_path}, {config.silver_path}, {config.gold_path}")
+    os.makedirs(config.models_path, exist_ok=True)
+    logger.info(f"Created directories: {config.bronze_path}, {config.silver_path}, {config.gold_path}, {config.models_path}")
 
     # Criar diretório se não existir
     os.makedirs(config.gold_path_lightfm_interactions, exist_ok=True)
@@ -125,8 +126,7 @@ def main():
         time.sleep(5)
         gc.collect()
 
-    # # Etapa 4? Modelo LightFM
-
+    logger.info("ETL process completed successfully!")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ COPY pyproject.toml ./
 
 # Generate lock file and install dependencies
 RUN poetry lock && \
+    pip install lightfm && \
     poetry install --no-root --no-interaction --no-ansi
 
 # Copy the rest of the project
@@ -31,4 +32,4 @@ ENV PYTHONUNBUFFERED=1
 
 USER ${NB_UID}
 
-CMD ["python", "src/main.py"] 
+CMD ["python", "src/train.py"]
