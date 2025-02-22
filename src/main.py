@@ -1,132 +1,56 @@
-from utils.logger import logger
-from services.downloader import Downloader
-from services.file_handler import FileHandler
-from services.spark_session import SparkSessionFactory
-from services.pre_process import BronzeToSilverTransformer
-from services.text_processor import TFIDFProcessor
-from configs.config import Config
+import platform
+import subprocess
 import os
-import gc
+import argparse
 import time
-import shutil
-from services.prepare_lightfm_data import LightFMDataPreparer
-from pyspark.sql import SparkSession
 
 
-def check_data_exists(config):
-    """Verifica se os dados já foram processados"""
-    paths = [
-        f"{config.silver_path_treino}/_SUCCESS",
-        f"{config.silver_path_itens}/_SUCCESS",
-        f"{config.silver_path_treino_normalized}/_SUCCESS",
-        f"{config.silver_path_itens_normalized}/_SUCCESS"
-    ]
-
-
-    if all(os.path.exists(path) for path in paths):
-        logger.info("Todos os dados já foram processados. Pulando processamento.")
-        return True
-    return False
-
-
-def main():
-    logger.info("Starting ETL process...")
-
-    config = Config()
-
-    # Criar diretórios necessários
-    os.makedirs(config.bronze_path, exist_ok=True)
-    os.makedirs(config.silver_path, exist_ok=True)
-    os.makedirs(config.gold_path, exist_ok=True)
-    os.makedirs(config.models_path, exist_ok=True)
-    logger.info(f"Created directories: {config.bronze_path}, {config.silver_path}, {config.gold_path}, {config.models_path}")
-
-    # Criar diretório se não existir
-    os.makedirs(config.gold_path_lightfm_interactions, exist_ok=True)
-    os.makedirs(config.gold_path_lightfm_user_features, exist_ok=True)
-    os.makedirs(config.gold_path_lightfm_item_features, exist_ok=True)
-
-    # Baixar o arquivo
-    downloader = Downloader()
-    downloader.download_file(
-        config.download_url,
-        config.output_file
-    )
-
-    # Descompactar e deletar o .zip
-    file_handler = FileHandler()
-    file_handler.unzip_and_delete(config.output_file, config.bronze_path)
-
-    # Etapa 1: Processamento Bronze to Silver
-    logger.info("Starting Bronze to Silver transformation...")
-    spark_session = SparkSessionFactory().create_spark_session("Bronze to Silver ETL")
-
+def run_docker_compose(service=None, mode=None):
+    """Run docker-compose in a system-agnostic way"""
     try:
-        transformer = BronzeToSilverTransformer(spark_session)
+        # Create necessary directories
+        os.makedirs("datalake/bronze", exist_ok=True)
+        os.makedirs("datalake/silver", exist_ok=True)
+        os.makedirs("datalake/gold", exist_ok=True)
+        os.makedirs("models", exist_ok=True)
 
-        # Transformar dados
-        logger.info("Starting Treino transformation...")
-        transformer.transform_treino(config.bronze_path, config.silver_path_treino)
+        if service:
+            # Run a specific service
+            subprocess.run(["docker-compose", "up", "--build", "-d", service], check=True)
+        elif mode == "full":
+            # Run ETL
+            print("Starting ETL process...")
+            subprocess.run(["docker-compose", "run", "etl", "python", "src/pipeline_etl.py"], check=True)
 
-        logger.info("Starting Itens transformation...")
-        transformer.transform_itens(config.bronze_path, config.silver_path_itens)
+            # Run model training after ETL completes
+            print("Starting model training...")
+            subprocess.run(["docker-compose", "run", "model", "python", "src/pipeline_model.py"], check=True)
 
-        # Normalizar dados
-        logger.info("Starting Treino normalization...")
-        transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
+            # Start other services
+            print("Starting Jupyter and Streamlit...")
+            subprocess.run(["docker-compose", "up", "--build", "-d", "jupyter"], check=True)
+            subprocess.run(["docker-compose", "up", "--build", "-d", "streamlit"], check=True)
+        else:
+            # Run all services in detached mode
+            subprocess.run(["docker-compose", "up", "--build", "etl"], check=True)
+            subprocess.run(["docker-compose", "up", "--build", "-d", "model"], check=True)
+            subprocess.run(["docker-compose", "up", "--build", "-d", "jupyter"], check=True)
+            subprocess.run(["docker-compose", "up", "--build", "-d", "streamlit"], check=True)
 
-        logger.info("Starting Itens normalization...")
-        try:
-            transformer.normalize_itens(config.silver_path_itens, config.silver_path_itens_normalized)
-            spark_session.catalog.clearCache()
-        except Exception as e:
-            logger.error(f"Error saving normalized data: {str(e)}")
-            raise
-    finally:
-        logger.info("Stopping first Spark session...")
-        spark_session.stop()
-        time.sleep(5)
-        gc.collect()
-
-    # Etapa 2: Processamento de Texto
-    logger.info("Starting Text processing...")
-    spark_session = SparkSessionFactory().create_spark_session("Text Processing")
-
-    try:
-        text_processor = TFIDFProcessor(spark_session)
-
-        # Processar dados, passando o caminho de saída
-        output_path = f"{config.silver_path_itens_embeddings}"
-        text_processor.process(output_path)
-
+    except subprocess.CalledProcessError as e:
+        print(f"Error running docker-compose: {e}")
     except Exception as e:
-        logger.error(f"Error in Text processing: {str(e)}")
-        raise
-    finally:
-        logger.info("Stopping Spark session...")
-        spark_session.stop()
-        time.sleep(5)
-        gc.collect()
-
-    # Etapa 3: Preparação dos dados para LightFM
-    logger.info("Starting LightFM data preparation...")
-    spark_session = SparkSessionFactory().create_spark_session("LightFM Data Preparation")
-    try:
-        preparer = LightFMDataPreparer(spark_session, config.silver_path_treino_normalized, config.silver_path_itens_embeddings,
-                                       config.gold_path_lightfm_interactions, config.gold_path_lightfm_user_features,
-                                       config.gold_path_lightfm_item_features)
-        preparer.prepare_data()
-    except Exception as e:
-        logger.error(f"Error in LightFM Data Preparation: {str(e)}")
-        raise
-    finally:
-        logger.info("Stopping Spark session...")
-        spark_session.stop()
-        time.sleep(5)
-        gc.collect()
-
-    logger.info("ETL process completed successfully!")
+        print(f"Unexpected error: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Run project services')
+    parser.add_argument('--service', choices=['etl', 'jupyter', 'streamlit', 'model'],
+                        help='Specific service to run')
+    parser.add_argument('--mode', choices=['full'],
+                        help='Run mode: full = ETL + Training + Services')
+
+    args = parser.parse_args()
+
+    print(f"Detected Operating System: {platform.system()}")
+    run_docker_compose(args.service, args.mode)

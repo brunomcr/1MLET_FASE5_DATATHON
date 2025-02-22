@@ -92,13 +92,13 @@ cd <project-directory>
 2. Run the ETL process:
 
 ```bash
-python src/run.py --service etl
+python src/main.py --service etl
 ```
 
 3. Start Jupyter environment:
 
 ```bash
-python src/run.py --service jupyter
+python src/main.py --service jupyter
 ```
 
 

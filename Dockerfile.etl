@@ -32,4 +32,4 @@ ENV PYTHONUNBUFFERED=1
 
 USER ${NB_UID}
 
-CMD ["python", "src/main.py"] 
+CMD ["python", "src/pipeline_etl.py"]
