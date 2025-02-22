@@ -4,6 +4,7 @@ from services.spark_session import SparkSessionFactory
 from services.train_lightfm import LightFMTrainer
 import time
 import gc
+import os
 
 
 def main():
@@ -15,10 +16,11 @@ def main():
     try:
         trainer = LightFMTrainer(
             spark=spark_session,
-            interactions_path=f"{config.gold_path_lightfm_interactions}/interaction_matrix.npz",
-            user_features_path=f"{config.gold_path_lightfm_user_features}/user_features.parquet",
-            item_features_path=f"{config.gold_path_lightfm_item_features}/item_features.parquet",
-            model_output_path=f"{config.models_path}/lightfm_model.pkl"
+            interactions_path=os.path.join(config.gold_path_lightfm_interactions, "interaction_matrix.npz"),
+            user_features_path=os.path.join(config.gold_path_lightfm_user_features, "user_features.parquet"),
+            item_features_path=os.path.join(config.gold_path_lightfm_item_features, "item_features.parquet"),
+            model_output_path=os.path.join(config.models_path, "lightfm_model.pkl"),
+            test_ratio=0.2
         )
 
         # Carrega os dados preparados
@@ -33,10 +35,10 @@ def main():
         logger.info("Training LightFM model...")
         trainer.train_model()
 
-        # Avalia o modelo
-        logger.info("Evaluating model performance...")
-        metrics = trainer.evaluate_model()
-        logger.info(f"Model metrics: {metrics}")
+        # # Avalia o modelo
+        # logger.info("Evaluating model performance...")
+        # metrics = trainer.evaluate_model()
+        # logger.info(f"Model metrics: {metrics}")
 
         # Salva o modelo treinado
         logger.info("Saving trained model...")

@@ -11,64 +11,156 @@ from utils.logger import logger
 
 class LightFMTrainer:
     def __init__(self, spark=None, interactions_path=None, user_features_path=None, item_features_path=None,
-                 model_output_path=None):
+                 model_output_path=None, test_ratio=0.2):
         self.spark = spark
         self.interactions_path = interactions_path
         self.user_features_path = user_features_path
         self.item_features_path = item_features_path
         self.model_output_path = model_output_path
         self.model = None
+        self.test_ratio = test_ratio
+        self.train = None  # Inicializar atributo
+        self.test = None  # Inicializar atributo
+
+        # Validar test_ratio
+        if not 0 < test_ratio < 1:
+            raise ValueError("test_ratio must be between 0 and 1")
 
     def load_data(self):
         """Load interaction matrix and features"""
-        logger.info("Loading data...")
+        try:
+            logger.info("Loading data...")
 
-        # Load interaction matrix
-        self.interaction_matrix = sp.load_npz(self.interactions_path)
+            # Load interaction matrix
+            try:
+                logger.info(f"Loading interaction matrix from {self.interactions_path}")
+                self.interaction_matrix = sp.load_npz(self.interactions_path)
+                logger.info(f"Interaction matrix loaded: shape={self.interaction_matrix.shape}, "
+                            f"non-zero elements={self.interaction_matrix.nnz}, "
+                            f"density={self.interaction_matrix.nnz / (self.interaction_matrix.shape[0] * self.interaction_matrix.shape[1]):.4%}")
 
-        # Load user features from Parquet
-        user_features_df = self.spark.read.parquet(self.user_features_path)
+                # Validar se a matriz não está vazia
+                if self.interaction_matrix.nnz == 0:
+                    raise ValueError("Loaded interaction matrix is empty")
 
-        # Load item features from Parquet
-        item_features_df = self.spark.read.parquet(self.item_features_path)
+            except Exception as e:
+                logger.error(f"Error loading interaction matrix: {str(e)}")
+                raise
 
-        # Convert features to sparse matrices
-        self.user_features = self._convert_features_to_sparse(user_features_df, "user_features")
-        self.item_features = self._convert_features_to_sparse(item_features_df, "features")
+            # Load user features
+            try:
+                logger.info(f"Loading user features from {self.user_features_path}")
+                user_features_df = self.spark.read.parquet(self.user_features_path)
+                user_count = user_features_df.count()
+                logger.info(f"User features loaded: {user_count} users")
+            except Exception as e:
+                logger.error(f"Error loading user features: {str(e)}")
+                raise
 
-        logger.info(f"Data loaded: {self.interaction_matrix.shape[0]} users, {self.interaction_matrix.shape[1]} items")
+            # Load item features
+            try:
+                logger.info(f"Loading item features from {self.item_features_path}")
+                item_features_df = self.spark.read.parquet(self.item_features_path)
+                item_count = item_features_df.count()
+                logger.info(f"Item features loaded: {item_count} items")
+            except Exception as e:
+                logger.error(f"Error loading item features: {str(e)}")
+                raise
+
+            # Convert features to sparse matrices
+            try:
+                logger.info("Converting user features to sparse matrix...")
+                self.user_features = self._convert_features_to_sparse(user_features_df, "user_features")
+                logger.info(f"User features matrix shape: {self.user_features.shape}")
+
+                logger.info("Converting item features to sparse matrix...")
+                self.item_features = self._convert_features_to_sparse(item_features_df, "features")
+                logger.info(f"Item features matrix shape: {self.item_features.shape}")
+            except Exception as e:
+                logger.error(f"Error converting features to sparse matrices: {str(e)}")
+                raise
+
+            # Validações finais
+            try:
+                if self.user_features.shape[0] != self.interaction_matrix.shape[0]:
+                    raise ValueError(
+                        f"Mismatch in user dimensions: interaction_matrix={self.interaction_matrix.shape[0]}, "
+                        f"user_features={self.user_features.shape[0]}")
+
+                if self.item_features.shape[0] != self.interaction_matrix.shape[1]:
+                    raise ValueError(
+                        f"Mismatch in item dimensions: interaction_matrix={self.interaction_matrix.shape[1]}, "
+                        f"item_features={self.item_features.shape[0]}")
+            except Exception as e:
+                logger.error(f"Error in final validations: {str(e)}")
+                raise
+
+            logger.info("Data loading completed successfully")
+
+        except Exception as e:
+            logger.error(f"Error in load_data: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
 
     def _convert_features_to_sparse(self, df, feature_col):
         """Convert DataFrame features to sparse matrix"""
-        features_array = np.array(df.select(feature_col).collect())
+        # Collect features as a list of arrays
+        features_list = [row[feature_col].toArray() for row in df.select(feature_col).collect()]
+        # Convert to 2D numpy array
+        features_array = np.array(features_list)
+        # Ensure 2D shape
+        if features_array.ndim > 2:
+            features_array = features_array.reshape(features_array.shape[0], -1)
         return sp.csr_matrix(features_array)
 
-    def split_data(self, test_ratio=0.2):
-        """Split data into train and test sets"""
+    def split_data(self):
+        """Split interaction matrix into train and test sets."""
         logger.info("Splitting data...")
+        logger.info(f"Interaction matrix shape: {self.interaction_matrix.shape}")
+        logger.info(f"Number of non-zero interactions: {self.interaction_matrix.nnz}")
+        logger.info(f"Using test_ratio: {self.test_ratio}")
 
-        # Create mask for test set
-        test_mask = np.random.random(self.interaction_matrix.shape) < test_ratio
+        try:
+            # Criar máscara de teste
+            logger.info("Creating test mask...")
 
-        # Ensure each user has at least one interaction in training set
-        test_mask = self._ensure_min_interactions(test_mask)
+            # Obter índices de interações não-zero
+            nonzero = self.interaction_matrix.nonzero()
+            num_nonzero = len(nonzero[0])
 
-        # Create train and test matrices
-        self.train = self.interaction_matrix.multiply(~test_mask)
-        self.test = self.interaction_matrix.multiply(test_mask)
+            # Calcular número de interações para teste
+            num_test = int(num_nonzero * self.test_ratio)
 
-        logger.info("Data split completed")
+            # Gerar índices aleatórios para teste
+            test_indices = np.random.choice(num_nonzero, num_test, replace=False)
 
-    def _ensure_min_interactions(self, test_mask):
-        """Ensure each user has at least one interaction in training set"""
-        n_users = test_mask.shape[0]
-        for user_id in range(n_users):
-            user_interactions = self.interaction_matrix[user_id].nonzero()[1]
-            if len(user_interactions) > 0:
-                if test_mask[user_id].sum() >= len(user_interactions):
-                    # Keep at least one interaction in training
-                    test_mask[user_id, np.random.choice(user_interactions)] = False
-        return test_mask
+            # Criar máscaras
+            train_mask = sp.csr_matrix(self.interaction_matrix.shape, dtype=np.bool_)
+            test_mask = sp.csr_matrix(self.interaction_matrix.shape, dtype=np.bool_)
+
+            # Preencher máscaras
+            train_indices = np.ones(num_nonzero, dtype=bool)
+            train_indices[test_indices] = False
+
+            train_mask[nonzero[0][train_indices], nonzero[1][train_indices]] = True
+            test_mask[nonzero[0][test_indices], nonzero[1][test_indices]] = True
+
+            logger.info(f"Train mask shape: {train_mask.shape}, non-zero elements: {train_mask.nnz}")
+            logger.info(f"Test mask shape: {test_mask.shape}, non-zero elements: {test_mask.nnz}")
+
+            # Criar matrizes de treino e teste
+            self.train = self.interaction_matrix.multiply(train_mask)  # Armazenar como atributo
+            self.test = self.interaction_matrix.multiply(test_mask)  # Armazenar como atributo
+
+            logger.info(f"Train matrix: {self.train.nnz} interactions")
+            logger.info(f"Test matrix: {self.test.nnz} interactions")
+
+        except Exception as e:
+            logger.error(f"Error splitting data: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
 
     def train_model(self, epochs=30):
         """Train the LightFM model"""
