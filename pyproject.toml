@@ -19,7 +19,7 @@ pyspark = "^3.5.0"
 ipykernel = "^6.29.0"
 setuptools = "^75.8.0"
 numpy = ">=1.21.6, <1.28.0"
-lightfm = "^1.17"
+#lightfm = "^1.17" # Esta sendo instalado pelo pip no dockerfile / erro com pep 517
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.0"
