@@ -8,14 +8,12 @@ import plotly.graph_objects as go
 import numpy as np
 import time
 
-# Configuração da página Streamlit
 st.set_page_config(
     page_title="Análise Exploratória - Recomendador de Notícias",
     page_icon="📊",
     layout="wide"
 )
 
-# Inicialização do Spark
 @st.cache_resource
 def init_spark():
     spark = SparkSession.builder.appName("NewsRecommenderEDA") \
@@ -83,7 +81,6 @@ def get_time_distribution(_spark):
         ORDER BY year, month, day
     """).toPandas()
     
-    # Criar a coluna year_month_day
     time_series['year_month_day'] = time_series['year'].astype(str) + '-' + \
                                    time_series['month'].astype(str) + '-' + \
                                    time_series['day'].astype(str)
@@ -133,7 +130,6 @@ def get_retention_data(_spark):
         ORDER BY year, month, day
     """).toPandas()
 
-    # Criar a coluna date
     time_retention_df["date"] = pd.to_datetime(
         time_retention_df[["year", "month", "day"]].assign(
             year=lambda x: x["year"].astype(str),
@@ -181,17 +177,15 @@ def get_news_overlap_data(_spark):
 @st.cache_data
 def get_news_popularity_data(_spark):
     """Cache para os dados de popularidade das notícias (Análise 7 e 8)"""
-    # Query para obter array de notícias
+
     news_popularity_df = _spark.sql("""
         SELECT userId, split(history, ',') AS news_array
         FROM tab_treino
     """).withColumn("news_id", explode(col("news_array")))
 
-    # Agregação por notícia
     news_popularity_df = news_popularity_df.groupBy("news_id") \
         .agg(countDistinct("userId").alias("unique_users"))
 
-    # Converter para pandas para processamento posterior
     return news_popularity_df.toPandas()
 
 @st.cache_data
@@ -814,17 +808,13 @@ def show_analysis_7(spark):
     ------------------------------------------------------------
     """)
 
-    # Modificar a função get_news_popularity_data para retornar já o DataFrame processado
     news_popularity_df = get_news_popularity_data(spark)
     
-    # Criar bins usando pandas
     bins = pd.qcut(news_popularity_df["unique_users"], q=10, duplicates='drop')
     news_popularity_df["popularity_decile"] = bins.astype(str)
 
-    # Contar notícias por faixa de popularidade
     decile_counts = news_popularity_df.groupby("popularity_decile").size().reset_index(name="count")
-
-    # Criar o gráfico
+    
     fig = px.bar(
         decile_counts, x="popularity_decile", y="count",
         title="Distribuição de Notícias por Faixa de Popularidade (Decil)",
@@ -889,14 +879,12 @@ def show_analysis_8(spark):
     ------------------------------------------------------------
     """)
 
-    # Consulta SQL para obter a popularidade das notícias
     news_popularity_df = spark.sql("""
         SELECT history AS news_id, COUNT(DISTINCT userId) AS unique_users
         FROM tab_treino
         GROUP BY history
     """)
 
-    # Criação de bins para categorizar as notícias por número de usuários únicos
     news_popularity_df = news_popularity_df.withColumn(
         "user_bins",
         when(col("unique_users") <= 10, "1-10")
@@ -906,15 +894,12 @@ def show_analysis_8(spark):
         .otherwise("10001+")
     )
 
-    # Contagem de notícias por faixa de popularidade
     news_bins_count = news_popularity_df.groupBy("user_bins").count().toPandas()
 
-    # Ordenação das faixas de popularidade
     bins_order = ["1-10", "11-100", "101-1000", "1001-10000", "10001+"]
     news_bins_count["user_bins"] = pd.Categorical(news_bins_count["user_bins"], categories=bins_order, ordered=True)
     news_bins_count = news_bins_count.sort_values("user_bins")
 
-    # Gráfico de barras para visualização da distribuição de notícias por faixa de popularidade
     fig_bins_news = px.bar(
         news_bins_count, x="user_bins", y="count",
         title="Distribuição de Notícias por Faixa de Popularidade",
@@ -924,7 +909,6 @@ def show_analysis_8(spark):
 
     st.plotly_chart(fig_bins_news, use_container_width=True)
 
-    # 📊 **Gráfico: Distribuição de Notícias por Faixa de Popularidade**
     st.markdown("""
     🔎 **Observações**
     - A maioria esmagadora das notícias foi acessada por um número muito pequeno de usuários: mais de 210 mil notícias foram vistas por no máximo 10 usuários.
@@ -969,7 +953,6 @@ def show_analysis_9(spark):
     correlation, sample_df = get_clicks_time_correlation(spark)
     st.write(f"Correlação entre número de cliques e tempo de leitura: {correlation:.4f}")
 
-    # Gráfico de dispersão para visualização da correlação
     fig_clicks_time = px.scatter(
         sample_df, x="numberOfClicksHistory", y="timeOnPageHistory",
         title="Correlação entre Número de Cliques e Tempo de Leitura",
@@ -1028,17 +1011,13 @@ def show_analysis_10(spark):
     ------------------------------------------------------------
     """)
 
-    # Criar a distribuição dos usuários por número de interações
     user_interactions_df = get_user_interactions_data(spark)
 
-    # Calcular os decis da distribuição de interações e remover duplicatas
     deciles = np.percentile(user_interactions_df["interaction_count"], np.arange(0, 110, 10))
-    deciles = np.unique(deciles)  # Remove valores duplicados
+    deciles = np.unique(deciles) 
 
-    # Criar labels para cada decil
     decile_labels = [f"{int(deciles[i])}-{int(deciles[i+1])}" for i in range(len(deciles)-1)]
 
-    # Criar nova coluna categorizando usuários pelos decis
     user_interactions_df["interaction_decile"] = pd.cut(
         user_interactions_df["interaction_count"], 
         bins=deciles, 
@@ -1046,14 +1025,11 @@ def show_analysis_10(spark):
         include_lowest=True
     )
 
-    # Contagem de usuários por faixa de decil
     decile_counts = user_interactions_df["interaction_decile"].value_counts().sort_index().reset_index()
     decile_counts.columns = ["Interaction Range", "User Count"]
 
-    # Calcular percentual acumulado
     decile_counts["Cumulative %"] = (decile_counts["User Count"].cumsum() / decile_counts["User Count"].sum()) * 100
 
-    # Gráfico de barras e linha de percentual acumulado
     fig = go.Figure()
 
     fig.add_trace(go.Bar(
@@ -1070,7 +1046,7 @@ def show_analysis_10(spark):
         name="Percentual Acumulado",
         mode="lines+markers",
         yaxis="y2",
-        line=dict(color='red')  # Adicionando a cor vermelha
+        line=dict(color='red') 
     ))
 
     fig.update_layout(
@@ -1264,11 +1240,10 @@ def pre_cache_all_data(spark):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    total_functions = 10  # Número total de funções para cache
+    total_functions = 10  
     cached_functions = 0
 
     try:
-        # Lista de tuplas (função, descrição)
         cache_functions = [
             (get_news_per_user, "Cacheando dados de distribuição de leituras..."),
             (get_time_distribution, "Cacheando dados de distribuição temporal..."),
@@ -1284,10 +1259,10 @@ def pre_cache_all_data(spark):
 
         for func, description in cache_functions:
             status_text.text(description)
-            func(spark)  # Executa a função de cache
+            func(spark)  
             cached_functions += 1
             progress_bar.progress(cached_functions / total_functions)
-            time.sleep(0.5)  # Pequena pausa para visualização
+            time.sleep(0.5)  
 
         progress_bar.progress(1.0)
         status_text.text("✅ Todos os dados foram cacheados com sucesso!")
@@ -1329,11 +1304,9 @@ def show_home():
     - Melhorar o engajamento dos usuários com o portal
     """)
 
-    # Criar containers temporários para as mensagens de inicialização
     loading_message = st.empty()
     loading_message.markdown("#### 🚀 Inicializando o Sistema\nAguarde enquanto preparamos os dados para uma experiência mais rápida...")
 
-    # Tenta inicializar o Spark e cachear os dados
     try:
         spark = init_spark()
         treino, itens = load_data(spark)
@@ -1345,7 +1318,6 @@ def show_home():
         if cache_status:
             success_message = st.empty()
             success_message.success("#### ✅ Sistema Pronto!")
-            # Aguarda 2 segundos e limpa as mensagens
             time.sleep(2)
             loading_message.empty()
             success_message.empty()
@@ -1356,11 +1328,9 @@ def show_home():
         st.error(f"❌ Erro ao inicializar o sistema: {str(e)}")
 
 def main():
-    # Sidebar estilizada
     with st.sidebar:
         st.title("Análises")
         
-        # Menu estilizado com ícones - Tema Escuro
         analysis_option = option_menu(
             menu_title=None,
             options=[
@@ -1408,19 +1378,16 @@ def main():
             }
         )
         
-        # Forçar recarregamento ao mudar de página
         if st.session_state.get("last_page") != analysis_option:
             st.session_state["last_page"] = analysis_option
             st.experimental_rerun()
 
-    # Inicializa Spark
     try:
         spark = init_spark()
         treino, itens = load_data(spark)
         treino.createOrReplaceTempView("tab_treino")
         itens.createOrReplaceTempView("tab_itens")
 
-        # Chamando a análise correspondente
         analysis_functions = {
             "Análise 1: Distribuição de Leituras": show_analysis_1,
             "Análise 2: Distribuição Temporal": show_analysis_2,
