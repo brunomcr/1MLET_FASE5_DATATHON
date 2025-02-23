@@ -16,26 +16,12 @@ RUN pip install --no-cache-dir \
     plotly==5.14.1 \
     pandas==1.5.3 \
     numpy==1.24.3 \
-    scikit-learn==1.2.2
-
-# Install poetry with PATH configuration
-RUN curl -sSL https://install.python-poetry.org | python3 - && \
-    cd /usr/local/bin && \
-    ln -s /home/jovyan/.local/bin/poetry poetry && \
-    poetry config virtualenvs.create false
-
-# Copy only pyproject.toml first
-COPY pyproject.toml ./
-
-# Generate lock file and install dependencies
-RUN poetry lock && \
-    poetry install --no-root --no-interaction --no-ansi
+    scikit-learn==1.2.2 \
+    pyspark \
+    streamlit-option-menu
 
 # Copy the rest of the project
 COPY . .
-
-# Install project
-RUN poetry install --no-interaction --no-ansi
 
 ENV PYTHONUNBUFFERED=1
 
@@ -47,4 +33,4 @@ USER ${NB_UID}
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0"] 
+CMD ["streamlit", "run", "streamlit/app.py", "--server.address", "0.0.0.0"] 
