@@ -180,3 +180,5 @@ docker-compose.override.yml
 # Dados
 datalake/*
 !datalake/.gitkeep
+
+models/
