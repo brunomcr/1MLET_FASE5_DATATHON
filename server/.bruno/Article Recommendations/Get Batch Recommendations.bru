@@ -1,0 +1,26 @@
+meta {
+  name: Get Batch Recommendations
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://localhost:8000/v1/predict/batch
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "requests": [
+      {
+        "user_id": "user123",
+        "num_recommendations": 5
+      },
+      {
+        "user_id": "user456",
+        "num_recommendations": 3
+      }
+    ]
+  }
+}
