@@ -7,10 +7,13 @@ from streamlit_option_menu import option_menu
 import plotly.graph_objects as go
 import numpy as np
 import time
+import json
+import os
+from datetime import datetime
 
 st.set_page_config(
     page_title="Análise Exploratória - Recomendador de Notícias",
-    page_icon="📊",
+    page_icon="",
     layout="wide"
 )
 
@@ -231,6 +234,72 @@ def get_news_distribution_data(_spark):
     )
 
     return news_popularity_df.toPandas()
+
+@st.cache_data
+def load_monitoring_results():
+    """Carrega os resultados mais recentes do monitoramento"""
+    try:
+        monitoring_path = "/app/models/monitoring"
+        
+        if not os.path.exists(monitoring_path):
+            return None
+        
+        monitoring_files = [f for f in os.listdir(monitoring_path) 
+                          if f.startswith('monitoring_results_') and f.endswith('.json')]
+        
+        if not monitoring_files:
+            return None
+        
+        latest_file = max(monitoring_files)
+        file_path = os.path.join(monitoring_path, latest_file)
+        
+        with open(file_path, 'r') as f:
+            return json.load(f)
+            
+    except Exception as e:
+        return None
+
+def plot_feature_importance(feature_data):
+    """Plota o gráfico de importância das features"""
+    df = pd.DataFrame({
+        'Feature': [f"Feature {i}" for i in range(len(feature_data))],
+        'Importance': list(feature_data.values())
+    }).sort_values('Importance', ascending=False).head(20)
+
+    fig = px.bar(df, 
+                 x='Feature', 
+                 y='Importance',
+                 title='Top 20 Features Mais Importantes',
+                 color='Importance',
+                 color_continuous_scale='viridis')
+    
+    fig.update_layout(
+        xaxis_title="Features",
+        yaxis_title="Importância Relativa",
+        showlegend=False
+    )
+    
+    return fig
+
+def plot_interaction_metrics(interaction_data):
+    """Plota métricas de interação"""
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        x=['Total', 'Treino', 'Teste'],
+        y=[interaction_data['total_interactions'],
+           interaction_data['train_interactions'],
+           interaction_data['test_interactions']],
+        name='Número de Interações'
+    ))
+    
+    fig.update_layout(
+        title='Distribuição de Interações',
+        yaxis_title='Número de Interações',
+        showlegend=True
+    )
+    
+    return fig
 
 def show_analysis_1(spark):  
     st.markdown("<h1 style='font-size: 32px;'>Análise 1: Distribuição do número de notícias lidas por usuário</h1>", unsafe_allow_html=True)
@@ -1333,10 +1402,12 @@ def show_home():
         st.error(f"❌ Erro ao inicializar o sistema: {str(e)}")
 
 def main():
+    # Inicializar Spark
+    spark = init_spark()
+    
+    # Menu lateral
     with st.sidebar:
-        st.title("Análises")
-        
-        analysis_option = option_menu(
+        selected = option_menu(
             menu_title=None,
             options=[
                 "Home",
@@ -1350,72 +1421,65 @@ def main():
                 "Análise 8: Distribuição de Usuários",
                 "Análise 9: Correlações",
                 "Análise 10: Perfis de Usuários",
-                "Conclusões Gerais"
+                "Conclusões Gerais",
+                "Monitoramento do Modelo"
             ],
             icons=[
-                "house", "bar-chart-line", "clock-history", "graph-up-arrow",
-                "people", "file-earmark-text", "map", "person-lines-fill",
-                "link", "person-bounding-box", "check-circle"
+                "house", "newspaper", "people", "clock", "arrow-repeat",
+                "person", "calendar", "intersect", "star", "graph-up",
+                "bar-chart", "check-circle", "speedometer"
             ],
-            menu_icon="cast",
+            menu_icon=None,
             default_index=0,
+            orientation="vertical",
             styles={
-                "container": {"padding": "5px", "background-color": "#262730"},
-                "icon": {"color": "#ffffff", "font-size": "18px"}, 
+                "container": {"padding": "0!important", "background-color": "#262730"},
+                "icon": {"color": "#fafafa", "font-size": "16px"},
                 "nav-link": {
                     "font-size": "16px",
                     "text-align": "left",
-                    "margin": "2px",
-                    "padding": "10px",
-                    "color": "#ffffff",
-                    "--hover-color": "#363c4c"
+                    "margin": "0px",
+                    "--hover-color": "#414757",
+                    "color": "#fafafa",
+                    "padding": "12px 15px"
                 },
                 "nav-link-selected": {
-                    "background-color": "#ff5e5e",
-                    "font-weight": "bold",
-                    "color": "white"
-                },
-                "menu-title": {
+                    "background-color": "#00c04b",
                     "color": "#ffffff",
-                    "font-size": "20px",
                     "font-weight": "bold"
-                }
+                },
+                "menu-title": {"display": "none"}
             }
         )
-        
-        if st.session_state.get("last_page") != analysis_option:
-            st.session_state["last_page"] = analysis_option
-            st.experimental_rerun()
 
-    try:
-        spark = init_spark()
-        treino, itens = load_data(spark)
-        treino.createOrReplaceTempView("tab_treino")
-        itens.createOrReplaceTempView("tab_itens")
-
-        analysis_functions = {
-            "Análise 1: Distribuição de Leituras": show_analysis_1,
-            "Análise 2: Distribuição Temporal": show_analysis_2,
-            "Análise 3: Relação Tempo e Engajamento": show_analysis_3,
-            "Análise 4: Taxa de Retorno": show_analysis_4,
-            "Análise 5: Usuários Logados vs Anônimos": show_analysis_5,
-            "Análise 6: Padrões de Consumo": show_analysis_6,
-            "Análise 7: Sobreposição de Acessos": show_analysis_7,
-            "Análise 8: Distribuição de Usuários": show_analysis_8,
-            "Análise 9: Correlações": show_analysis_9,
-            "Análise 10: Perfis de Usuários": show_analysis_10,
-            "Conclusões Gerais": show_general_eda_conclusion,
-        }
-
-        if analysis_option == "Home":
-            show_home()
-        elif analysis_option in analysis_functions:
-            analysis_functions[analysis_option](spark)
-        else:
-            st.write("🏠 Bem-vindo! Escolha uma análise no menu lateral.")
-
-    except Exception as e:
-        st.error(f"Erro ao carregar os dados: {str(e)}")
+    # Roteamento das páginas
+    if selected == "Home":
+        show_home()
+    elif selected == "Análise 1: Distribuição de Leituras":
+        show_analysis_1(spark)
+    elif selected == "Análise 2: Distribuição Temporal":
+        show_analysis_2(spark)
+    elif selected == "Análise 3: Relação Tempo e Engajamento":
+        show_analysis_3(spark)
+    elif selected == "Análise 4: Taxa de Retorno":
+        show_analysis_4(spark)
+    elif selected == "Análise 5: Usuários Logados vs Anônimos":
+        show_analysis_5(spark)
+    elif selected == "Análise 6: Padrões de Consumo":
+        show_analysis_6(spark)
+    elif selected == "Análise 7: Sobreposição de Acessos":
+        show_analysis_7(spark)
+    elif selected == "Análise 8: Distribuição de Usuários":
+        show_analysis_8(spark)
+    elif selected == "Análise 9: Correlações":
+        show_analysis_9(spark)
+    elif selected == "Análise 10: Perfis de Usuários":
+        show_analysis_10(spark)
+    elif selected == "Conclusões Gerais":
+        show_general_eda_conclusion(spark)
+    elif selected == "Monitoramento do Modelo":
+        from pages.model_monitoring import show_monitoring_page
+        show_monitoring_page()
 
 if __name__ == "__main__":
     main()

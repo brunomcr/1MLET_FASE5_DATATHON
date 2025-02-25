@@ -5,10 +5,24 @@ from services.train_lightfm import LightFMTrainer
 import time
 import gc
 import os
+import argparse
+import numpy as np
 
 
 def main():
+    # Configurar o parser de argumentos
+    parser = argparse.ArgumentParser(description='Train LightFM recommendation model')
+    parser.add_argument('--sample_size', type=float, default=100.0,
+                        help='Percentage of data to use for training (e.g., 1.0 for 1%, 10.0 for 10%, 100.0 for full dataset)')
+    parser.add_argument('--epochs', type=int, default=30,
+                        help='Number of training epochs')
+    
+    # Parse os argumentos
+    args = parser.parse_args()
+    
     logger.info("Starting model training pipeline...")
+    logger.info(f"Using {args.sample_size}% of the dataset")
+    logger.info(f"Training for {args.epochs} epochs")
 
     config = Config()
     spark_session = SparkSessionFactory().create_spark_session("LightFM Training")
@@ -26,14 +40,20 @@ def main():
         # Carrega os dados preparados
         logger.info("Loading prepared data...")
         trainer.load_data()
+        
+        # Aplicar amostragem se sample_size < 100%
+        if args.sample_size < 100.0:
+            logger.info(f"Sampling {args.sample_size}% of the data...")
+            # Obter uma amostra do conjunto de dados
+            trainer.sample_data(args.sample_size / 100.0)
 
         # Divide em treino e teste
         logger.info("Splitting data into train/test sets...")
         trainer.split_data()
 
-        # Treina o modelo
-        logger.info("Training LightFM model...")
-        trainer.train_model()
+        # Treina o modelo com o número de épocas especificado
+        logger.info(f"Training LightFM model with {args.epochs} epochs...")
+        trainer.train_model(epochs=args.epochs)
 
         # # Avalia o modelo
         # logger.info("Evaluating model performance...")
