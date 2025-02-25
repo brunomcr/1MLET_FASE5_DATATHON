@@ -77,15 +77,44 @@ To use the Bruno collection:
 
 ### Production Build
 
-Build the Docker image:
+The application can be containerized using Docker. The setup includes all necessary dependencies (Python, Java, Hadoop) and configurations.
+
+#### Prerequisites
+- Docker installed on your system
+- Model files in `../models/`
+- LightFM Features files in `../datalake/gold/lightfm_item_features/` and `../datalake/gold/lightfm_user_features/`
+
+#### Build and Run
+
+1. From the root directory of the project, build the Docker image:
 ```bash
-docker build -t mlet-datathon-server .
+docker build -t recommendation-server -f Dockerfile.server .
 ```
 
-Run the container:
+2. Run the container:
 ```bash
-docker run -p 8000:8000 mlet-datathon-server
+docker run -p 8000:8000 --env-file server/.env.docker recommendation-server
 ```
+
+The API will be available at `http://localhost:8000` and the Swagger documentation at `http://localhost:8000/docs`
+
+#### Environment Configuration
+
+The application uses different environment files for different contexts:
+- `.env` - Local development
+- `.env.docker` - Docker container configuration
+
+The Docker environment file (`.env.docker`) is configured with absolute paths that match the container's filesystem structure:
+- Models path: `/app/models/`
+- User features: `/app/datalake/gold/lightfm_user_features/`
+- Item features: `/app/datalake/gold/lightfm_item_features/`
+
+#### Docker-specific Troubleshooting
+
+- **File Access Issues**: Ensure the model and data files exist in the correct locations relative to the Dockerfile
+- **Memory Issues**: Adjust Spark memory settings in `.env.docker`
+- **Connection Issues**: The container exposes port 8000, ensure it's not in use by other services
+- **Java/Hadoop Issues**: The container uses OpenJDK 17 and Hadoop 3.3.6, check logs for compatibility issues
 
 ## Troubleshooting
 

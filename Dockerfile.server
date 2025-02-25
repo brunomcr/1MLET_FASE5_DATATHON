@@ -1,0 +1,41 @@
+# Use Python 3.11 as base image
+FROM python:3.11-slim
+
+# Set working directory in container
+WORKDIR /app
+
+# Set environment variables
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV HADOOP_HOME=/opt/hadoop
+ENV PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin
+ENV PYSPARK_PYTHON=python3
+
+# Install system dependencies and OpenJDK
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    openjdk-17-jdk \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Hadoop
+RUN wget https://downloads.apache.org/hadoop/common/hadoop-3.3.6/hadoop-3.3.6.tar.gz \
+    && tar -xzf hadoop-3.3.6.tar.gz \
+    && mv hadoop-3.3.6 /opt/hadoop \
+    && rm hadoop-3.3.6.tar.gz
+
+# Verify Java installation
+RUN java -version
+
+# Copy server application, datalake, and models
+COPY server/ /app/
+COPY datalake/ /app/datalake/
+COPY models/ /app/models/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -e .
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Command to run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
