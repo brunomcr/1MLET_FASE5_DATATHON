@@ -76,6 +76,24 @@ def plot_interaction_metrics(interaction_data):
     
     return fig
 
+def calculate_user_coverage(interaction_data, n_users):
+    """Calcula a cobertura de usuários"""
+    users_with_recommendations = interaction_data['train_interactions'] + interaction_data['test_interactions']
+    return users_with_recommendations / n_users
+
+
+def calculate_item_coverage(interaction_data, n_items):
+    """Calcula a cobertura de itens"""
+    items_with_recommendations = interaction_data['train_interactions'] + interaction_data['test_interactions']
+    return items_with_recommendations / n_items
+
+
+def calculate_hit_rate(interaction_data, n_users):
+    """Calcula o Hit Rate"""
+    # Supondo que cada interação no conjunto de teste é um hit
+    hits = interaction_data['test_interactions']
+    return hits / n_users
+
 def show_monitoring_page():
     st.markdown("<h1 style='font-size: 32px;'>Monitoramento do Modelo de Recomendação</h1>", unsafe_allow_html=True)
     
@@ -178,6 +196,16 @@ def show_monitoring_page():
             st.metric("Número de Items", f"{dataset_info['n_items']:,}")
         with col3:
             st.metric("Número de Features", f"{dataset_info['n_features']:,}")
+
+        # Calcular e exibir novas métricas
+        user_coverage = calculate_user_coverage(results['interaction_distribution'], dataset_info['n_users'])
+        item_coverage = calculate_item_coverage(results['interaction_distribution'], dataset_info['n_items'])
+        hit_rate = calculate_hit_rate(results['interaction_distribution'], dataset_info['n_users'])
+
+        st.subheader("Novas Métricas")
+        st.metric("Cobertura de Usuários", f"{user_coverage:.2%}")
+        st.metric("Cobertura de Itens", f"{item_coverage:.2%}")
+        st.metric("Hit Rate", f"{hit_rate:.2%}")
 
 if __name__ == "__main__":
     show_monitoring_page() 
