@@ -7,8 +7,8 @@ from datetime import datetime
 import json
 import os
 
-def load_monitoring_results():
-    """Carrega os resultados mais recentes do monitoramento"""
+def load_monitoring_results(selected_file=None):
+    """Carrega os resultados mais recentes do monitoramento ou um arquivo selecionado"""
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(current_dir))
@@ -23,8 +23,11 @@ def load_monitoring_results():
         if not monitoring_files:
             return None
         
-        latest_file = max(monitoring_files)
-        file_path = os.path.join(monitoring_path, latest_file)
+        if selected_file:
+            file_path = os.path.join(monitoring_path, selected_file)
+        else:
+            latest_file = max(monitoring_files)
+            file_path = os.path.join(monitoring_path, latest_file)
         
         with open(file_path, 'r') as f:
             return json.load(f)
@@ -140,18 +143,48 @@ def plot_distribution_metrics(interaction_data):
     
     return fig
 
+def plot_performance_metrics(metrics):
+    """Plota métricas de performance"""
+    df = pd.DataFrame({
+        'Métrica': ['Precision@10', 'Recall@10', 'AUC', 'F1 Score'],
+        'Valor': [metrics['precision@10'], metrics['recall@10'], metrics['auc'], calculate_f1_score(metrics['precision@10'], metrics['recall@10'])]
+    })
+    fig = px.bar(df, x='Métrica', y='Valor', title='Métricas de Performance', color='Valor', color_continuous_scale='blues')
+    return fig
+
 def show_monitoring_page():
     st.markdown("<h1 style='font-size: 32px;'>Monitoramento do Modelo de Recomendação</h1>", unsafe_allow_html=True)
     
-    # Carregar dados
-    results = load_monitoring_results()
+    # Define monitoring_files within the function
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    monitoring_path = os.path.join(project_root, 'models', 'monitoring')
+    
+    if not os.path.exists(monitoring_path):
+        st.error("Diretório de monitoramento não encontrado.")
+        return
+    
+    monitoring_files = [f for f in os.listdir(monitoring_path) 
+                        if f.startswith('monitoring_results_') and f.endswith('.json')]
+    
+    if not monitoring_files:
+        st.error("Nenhum arquivo de monitoramento encontrado.")
+        return
+    
+    # Adicionar seletor de arquivo na área principal
+    file_options = [f"{f[19:23]}-{f[23:25]}-{f[25:27]} {f[28:30]}:{f[30:32]}" for f in monitoring_files]
+    selected_option = st.selectbox("Escolha a data e hora do monitoramento:", file_options)
+    selected_file = monitoring_files[file_options.index(selected_option)]
+
+    # Carregar dados com base no arquivo selecionado
+    results = load_monitoring_results(selected_file)
     
     if results is None:
         st.error("Não foi possível carregar os dados de monitoramento.")
         return
     
     # Timestamp do monitoramento
-    st.info(f"📅 Última Atualização: {results['timestamp']}")
+    st.markdown(f"📅 **Última Atualização:** {datetime.strptime(results['timestamp'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M')}")
     
     # Layout em tabs para melhor organização
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -174,6 +207,7 @@ def show_monitoring_page():
             - **Função de Perda**: {model_summary['loss_function']}
             - **Learning Rate**: {model_summary['learning_rate']}
             - **Tamanho do Modelo**: {model_summary['model_size_mb']:.2f} MB
+            - **Amostra Utilizada**: {results.get('sample_size', 'N/A')}%
             ------------------------------------------------------------
             """)
             st.markdown("""
@@ -183,6 +217,7 @@ def show_monitoring_page():
             - **Função de Perda**: Método usado para ajustar o modelo, determinando como os erros são penalizados.
             - **Learning Rate**: Taxa de aprendizado que controla a velocidade de ajuste do modelo durante o treinamento.
             - **Tamanho do Modelo**: Espaço ocupado pelo modelo em disco, importante para armazenamento e carregamento.
+            - **Amostra Utilizada**: Percentual do dataset utilizado para o treinamento do modelo.
             """)
         
         with col2:
@@ -222,44 +257,32 @@ def show_monitoring_page():
         st.subheader("Métricas de Performance")
         metrics = results["performance_metrics"]
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Precision@10", f"{metrics['precision@10']:.4f}")
-        with col2:
-            st.metric("Recall@10", f"{metrics['recall@10']:.4f}")
-        with col3:
-            st.metric("AUC", f"{metrics['auc']:.4f}")
-            
-        # Calcular e exibir o F1 Score
-        f1_score = calculate_f1_score(metrics['precision@10'], metrics['recall@10'])
-        st.metric("F1 Score", f"{f1_score:.4f}")
+        fig_performance = plot_performance_metrics(metrics)
+        st.plotly_chart(fig_performance, use_container_width=True)
         
         st.markdown("""
         **Explicação das Métricas de Performance:**
-        - **Precision@10**: Mede a proporção de itens relevantes entre os 10 primeiros recomendados, indicando precisão.
-        - **Recall@10**: Mede a proporção de itens relevantes recomendados entre os 10 primeiros, indicando cobertura.
-        - **AUC**: Área sob a curva ROC, avalia a capacidade do modelo de distinguir entre classes.
-        - **F1 Score**: Combina precisão e recall em uma única métrica, útil para balancear ambos.
+        - **Precision@10**: Proporção de itens relevantes entre os 10 primeiros recomendados, indicando a precisão das recomendações.
+        - **Recall@10**: Proporção de itens relevantes recuperados entre os 10 primeiros, mostrando a capacidade de recuperação do modelo.
+        - **AUC**: Área sob a curva ROC, medindo a capacidade do modelo de distinguir entre classes.
+        - **F1 Score**: Média harmônica entre precisão e recall, balanceando ambos os aspectos.
         ------------------------------------------------------------
         """)
         
         st.subheader("Métricas de Estabilidade")
         stability = results["model_stability"]
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Cobertura de Usuários", f"{stability['user_coverage']:.2%}")
-            st.metric("Usuários Cold-Start", f"{stability['cold_start_users']:,}")
-        with col2:
-            st.metric("Cobertura de Items", f"{stability['item_coverage']:.2%}")
-            st.metric("Items Cold-Start", f"{stability['cold_start_items']:,}")
+        df_stability = pd.DataFrame({
+            'Métrica': ['Cobertura de Usuários', 'Cobertura de Itens'],
+            'Valor': [stability['user_coverage'], stability['item_coverage']]
+        })
+        fig_stability = px.bar(df_stability, x='Métrica', y='Valor', title='Cobertura de Usuários e Itens', color='Valor', color_continuous_scale=px.colors.sequential.Blues)
+        st.plotly_chart(fig_stability, use_container_width=True)
         
         st.markdown("""
         **Explicação das Métricas de Estabilidade:**
         - **Cobertura de Usuários**: Proporção de usuários que receberam recomendações, importante para alcance.
-        - **Usuários Cold-Start**: Usuários sem histórico de interações, desafiadores para recomendações.
-        - **Cobertura de Items**: Proporção de itens recomendados, importante para diversidade.
-        - **Items Cold-Start**: Itens sem histórico de interações, desafiadores para recomendações.
+        - **Cobertura de Itens**: Proporção de itens recomendados, importante para diversidade.
         ------------------------------------------------------------
         """)
     
@@ -268,6 +291,13 @@ def show_monitoring_page():
         fig_interactions = plot_interaction_metrics(results["interaction_distribution"])
         st.plotly_chart(fig_interactions, use_container_width=True)
         
+        st.markdown("""
+        **Explicação da Distribuição de Interações:**
+        - **Total**: Número total de interações no dataset, incluindo treino e teste.
+        - **Treino**: Interações usadas para treinar o modelo, fundamentais para ajustar os parâmetros do modelo.
+        - **Teste**: Interações usadas para avaliar o modelo, importantes para medir a performance e generalização.
+        """)
+
         # Adicionar gráfico de distribuição média
         st.markdown("""------------------------------------------------------------""")
         fig_distribution = plot_distribution_metrics(results["interaction_distribution"])
@@ -291,13 +321,13 @@ def show_monitoring_page():
         )
         
         st.markdown("""
-        **Explicação da Distribuição de Interações:**
-        - **Interações por Usuário**: Média de interações por usuário, reflete engajamento.
-        - **Interações por Item**: Média de interações por item, reflete popularidade.
-        - **Sparsidade da Matriz**: Proporção de elementos vazios, indica densidade de dados.
+        **Explicação dos Parâmetros de Distribuição:**
+        - **Interações por Usuário**: Média de interações que cada usuário tem no dataset, refletindo o nível de engajamento dos usuários.
+        - **Interações por Item**: Média de interações que cada item recebe, indicando a popularidade dos itens.
+        - **Sparsidade da Matriz**: Proporção de elementos vazios na matriz de interações, mostrando a densidade dos dados. Uma alta sparsidade indica que a maioria dos usuários interage com poucos itens.
         ------------------------------------------------------------
         """)
-        
+
         # Informações do Dataset
         st.subheader("Informações do Dataset")
         dataset_info = results["dataset_info"]
@@ -355,26 +385,21 @@ def show_monitoring_page():
         st.subheader("Estatísticas dos Embeddings")
         if 'embedding_stats' in results:
             emb_stats = results['embedding_stats']
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Média Norm. Emb. Usuários", 
-                         f"{emb_stats.get('user_embedding_norm_mean', 'N/A'):.4f}")
-                st.metric("Desvio Norm. Emb. Usuários", 
-                         f"{emb_stats.get('user_embedding_norm_std', 'N/A'):.4f}")
-            with col2:
-                st.metric("Média Norm. Emb. Items", 
-                         f"{emb_stats.get('item_embedding_norm_mean', 'N/A'):.4f}")
-                st.metric("Desvio Norm. Emb. Items", 
-                         f"{emb_stats.get('item_embedding_norm_std', 'N/A'):.4f}")
+            df_embeddings = pd.DataFrame({
+                'Métrica': ['Média Norm. Emb. Usuários', 'Desvio Norm. Emb. Usuários', 'Média Norm. Emb. Items', 'Desvio Norm. Emb. Items'],
+                'Valor': [emb_stats.get('user_embedding_norm_mean', 0), emb_stats.get('user_embedding_norm_std', 0), emb_stats.get('item_embedding_norm_mean', 0), emb_stats.get('item_embedding_norm_std', 0)]
+            })
+            fig_embeddings = px.bar(df_embeddings, x='Métrica', y='Valor', title='Estatísticas dos Embeddings', color='Valor', color_continuous_scale='blues')
+            st.plotly_chart(fig_embeddings, use_container_width=True)
         else:
             st.info("Estatísticas dos embeddings não disponíveis")
 
         st.markdown("""
-        **Explicação das Métricas Técnicas:**
-        
-        **Estatísticas dos Embeddings:**
-        - Métricas que mostram a distribuição dos embeddings de usuários e items
-        - Valores muito altos ou baixos podem indicar problemas no treinamento
+        **Explicação das Estatísticas dos Embeddings:**
+        - **Média Norm. Emb. Usuários**: Média das normas dos embeddings de usuários, indicando a magnitude média dos vetores de usuários.
+        - **Desvio Norm. Emb. Usuários**: Desvio padrão das normas dos embeddings de usuários, mostrando a variação nas magnitudes dos vetores de usuários.
+        - **Média Norm. Emb. Items**: Média das normas dos embeddings de itens, indicando a magnitude média dos vetores de itens.
+        - **Desvio Norm. Emb. Items**: Desvio padrão das normas dos embeddings de itens, mostrando a variação nas magnitudes dos vetores de itens.
         ------------------------------------------------------------
         """)
 

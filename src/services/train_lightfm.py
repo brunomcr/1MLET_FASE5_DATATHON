@@ -326,7 +326,8 @@ class LightFMTrainer:
                     "n_features": int(self.item_features.shape[1]) if self.item_features is not None else 0,
                     "n_train_interactions": int(self.train.nnz),
                     "n_test_interactions": int(self.test.nnz)
-                }
+                },
+                "sample_size": sample_size
             }
             
             # Criar diretório de monitoramento se não existir
