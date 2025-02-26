@@ -1402,10 +1402,8 @@ def show_home():
         st.error(f"❌ Erro ao inicializar o sistema: {str(e)}")
 
 def main():
-    # Inicializar Spark
     spark = init_spark()
     
-    # Menu lateral
     with st.sidebar:
         selected = option_menu(
             menu_title=None,
@@ -1424,10 +1422,15 @@ def main():
                 "Conclusões Gerais",
                 "Monitoramento do Modelo"
             ],
+            # icons=[
+            #     "house", "newspaper", "people", "clock", "arrow-repeat",
+            #     "person", "calendar", "intersect", "star", "graph-up",
+            #     "bar-chart", "check-circle", "speedometer"
+            # ],
             icons=[
-                "house", "newspaper", "people", "clock", "arrow-repeat",
-                "person", "calendar", "intersect", "star", "graph-up",
-                "bar-chart", "check-circle", "speedometer"
+                "house", "bar-chart", "bar-chart", "bar-chart", "bar-chart",
+                "bar-chart", "bar-chart", "bar-chart", "bar-chart", "bar-chart",
+                "bar-chart", "bar-chart", "speedometer"
             ],
             menu_icon=None,
             default_index=0,
@@ -1436,7 +1439,7 @@ def main():
                 "container": {"padding": "0!important", "background-color": "#262730"},
                 "icon": {"color": "#fafafa", "font-size": "16px"},
                 "nav-link": {
-                    "font-size": "16px",
+                    "font-size": "14px",
                     "text-align": "left",
                     "margin": "0px",
                     "--hover-color": "#414757",
@@ -1452,7 +1455,6 @@ def main():
             }
         )
 
-    # Roteamento das páginas
     if selected == "Home":
         show_home()
     elif selected == "Análise 1: Distribuição de Leituras":

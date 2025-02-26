@@ -37,7 +37,6 @@ def load_monitoring_results(selected_file=None):
 
 def plot_feature_importance(feature_data):
     """Plota o gráfico de importância das features"""
-    # Criar DataFrame com as top 20 features
     df = pd.DataFrame({
         'Feature': [f"Feature {i}" for i in range(len(feature_data))],
         'Importance': list(feature_data.values())
@@ -62,7 +61,6 @@ def plot_interaction_metrics(interaction_data):
     """Plota métricas de interação"""
     fig = go.Figure()
     
-    # Adiciona barras para diferentes tipos de interações
     fig.add_trace(go.Bar(
         x=['Total', 'Treino', 'Teste'],
         y=[interaction_data['total_interactions'],
@@ -93,7 +91,6 @@ def calculate_item_coverage(interaction_data, n_items):
 
 def calculate_hit_rate(interaction_data, n_users):
     """Calcula o Hit Rate"""
-    # Supondo que cada interação no conjunto de teste é um hit
     hits = interaction_data['test_interactions']
     return hits / n_users
 
@@ -109,9 +106,8 @@ def calculate_gini_index(interaction_data):
     if total_interactions == 0:
         return 0.0
     
-    # Usando interações por item como medida de distribuição
     interactions_per_item = interaction_data['interactions_per_item']
-    return 1 - (interactions_per_item * 2)  # Normalizado entre 0 e 1
+    return 1 - (interactions_per_item * 2) 
 
 def calculate_conversion_rate(interaction_data):
     """Calcula a taxa de conversão das recomendações"""
@@ -123,12 +119,10 @@ def plot_distribution_metrics(interaction_data):
     """Plota métricas de distribuição"""
     fig = go.Figure()
     
-    # Criar dados para o gráfico
     categories = ['Interações por Usuário', 'Interações por Item']
     values = [interaction_data['interactions_per_user'], 
               interaction_data['interactions_per_item']]
     
-    # Adicionar barras
     fig.add_trace(go.Bar(
         x=categories,
         y=values,
@@ -155,7 +149,6 @@ def plot_performance_metrics(metrics):
 def show_monitoring_page():
     st.markdown("<h1 style='font-size: 32px;'>Monitoramento do Modelo de Recomendação</h1>", unsafe_allow_html=True)
     
-    # Define monitoring_files within the function
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(current_dir))
     monitoring_path = os.path.join(project_root, 'models', 'monitoring')
@@ -171,30 +164,18 @@ def show_monitoring_page():
         st.error("Nenhum arquivo de monitoramento encontrado.")
         return
     
-    # Adicionar seletor de arquivo na área principal
-    file_options = [f"{f[19:23]}-{f[23:25]}-{f[25:27]} {f[28:30]}:{f[30:32]}" for f in monitoring_files]
+    file_options = sorted([f"{f[19:23]}-{f[23:25]}-{f[25:27]} {f[28:30]}:{f[30:32]}" for f in monitoring_files], reverse=True)
     selected_option = st.selectbox("Escolha a data e hora do monitoramento:", file_options)
     selected_file = monitoring_files[file_options.index(selected_option)]
 
-    # Carregar dados com base no arquivo selecionado
     results = load_monitoring_results(selected_file)
     
     if results is None:
         st.error("Não foi possível carregar os dados de monitoramento.")
         return
     
-    # Timestamp do monitoramento
     st.markdown(f"📅 **Última Atualização:** {datetime.strptime(results['timestamp'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M')}")
     
-    # Layout em tabs para melhor organização
-    # tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    #     "📋 Resumo do Modelo",
-    #     "📈 Performance",
-    #     "📊 Distribuição",
-    #     "🎯 Métricas Avançadas",
-    #     "⚙️ Métricas Técnicas"
-    # ])
-
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Resumo do Modelo",
         "Performance",
@@ -250,7 +231,6 @@ def show_monitoring_page():
             - **Random State**: Garante a reprodutibilidade dos resultados ao fixar a semente aleatória.
             """)
 
-        # Adicionar métricas de convergência se disponíveis
         if 'convergence_metrics' in results:
             st.subheader("Métricas de Convergência")
             conv_metrics = results['convergence_metrics']
@@ -306,7 +286,6 @@ def show_monitoring_page():
         - **Teste**: Interações usadas para avaliar o modelo, importantes para medir a performance e generalização.
         """)
 
-        # Adicionar gráfico de distribuição média
         st.markdown("""------------------------------------------------------------""")
         fig_distribution = plot_distribution_metrics(results["interaction_distribution"])
         st.plotly_chart(fig_distribution, use_container_width=True)
@@ -336,7 +315,6 @@ def show_monitoring_page():
         ------------------------------------------------------------
         """)
 
-        # Informações do Dataset
         st.subheader("Informações do Dataset")
         dataset_info = results["dataset_info"]
         col1, col2, col3 = st.columns(3)
@@ -359,7 +337,6 @@ def show_monitoring_page():
     with tab4:
         st.subheader("Métricas Avançadas")
         
-        # Calcular novas métricas
         user_coverage = calculate_user_coverage(results['interaction_distribution'], dataset_info['n_users'])
         item_coverage = calculate_item_coverage(results['interaction_distribution'], dataset_info['n_items'])
         hit_rate = calculate_hit_rate(results['interaction_distribution'], dataset_info['n_users'])
@@ -389,7 +366,6 @@ def show_monitoring_page():
     with tab5:
         st.subheader("Métricas Técnicas")
         
-        # Estatísticas dos Embeddings
         st.subheader("Estatísticas dos Embeddings")
         if 'embedding_stats' in results:
             emb_stats = results['embedding_stats']
