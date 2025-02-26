@@ -14,7 +14,18 @@ from pyspark.sql import SparkSession
 
 
 def check_data_exists(config):
-    """Verifica se os dados já foram processados"""
+    """Check if the required data has already been processed.
+
+    This function verifies the existence of specific files that indicate whether the data
+    has been successfully processed. If all required files are found, it logs a message
+    and returns True; otherwise, it returns False.
+
+    Args:
+        config (Config): The configuration object containing paths to the processed data.
+
+    Returns:
+        bool: True if all required data files exist, False otherwise.
+    """
     paths = [
         f"{config.silver_path_treino}/_SUCCESS",
         f"{config.silver_path_itens}/_SUCCESS",
@@ -22,56 +33,58 @@ def check_data_exists(config):
         f"{config.silver_path_itens_normalized}/_SUCCESS"
     ]
 
-
     if all(os.path.exists(path) for path in paths):
-        logger.info("Todos os dados já foram processados. Pulando processamento.")
+        logger.info("All data has already been processed. Skipping processing.")
         return True
     return False
 
 
 def main():
+    """Main entry point for the ETL process.
+
+    This function orchestrates the entire ETL process, including creating necessary directories,
+    downloading data, transforming data from Bronze to Silver, normalizing the data, processing
+    text data using TF-IDF, and preparing data for LightFM. It also handles exceptions and ensures
+    that Spark sessions are properly managed throughout the process.
+
+    Returns:
+        None
+    """
     logger.info("Starting ETL process...")
 
     config = Config()
 
-    # Criar diretórios necessários
     os.makedirs(config.bronze_path, exist_ok=True)
     os.makedirs(config.silver_path, exist_ok=True)
     os.makedirs(config.gold_path, exist_ok=True)
     os.makedirs(config.models_path, exist_ok=True)
     logger.info(f"Created directories: {config.bronze_path}, {config.silver_path}, {config.gold_path}, {config.models_path}")
 
-    # Criar diretório se não existir
     os.makedirs(config.gold_path_lightfm_interactions, exist_ok=True)
     os.makedirs(config.gold_path_lightfm_user_features, exist_ok=True)
     os.makedirs(config.gold_path_lightfm_item_features, exist_ok=True)
 
-    # Baixar o arquivo
     downloader = Downloader()
     downloader.download_file(
         config.download_url,
         config.output_file
     )
 
-    # Descompactar e deletar o .zip
     file_handler = FileHandler()
     file_handler.unzip_and_delete(config.output_file, config.bronze_path)
 
-    # Etapa 1: Processamento Bronze to Silver
     logger.info("Starting Bronze to Silver transformation...")
     spark_session = SparkSessionFactory().create_spark_session("Bronze to Silver ETL")
 
     try:
         transformer = BronzeToSilverTransformer(spark_session)
 
-        # Transformar dados
         logger.info("Starting Treino transformation...")
         transformer.transform_treino(config.bronze_path, config.silver_path_treino)
 
         logger.info("Starting Itens transformation...")
         transformer.transform_itens(config.bronze_path, config.silver_path_itens)
 
-        # Normalizar dados
         logger.info("Starting Treino normalization...")
         transformer.normalize_treino(config.silver_path_treino, config.silver_path_treino_normalized)
 
@@ -88,14 +101,12 @@ def main():
         time.sleep(5)
         gc.collect()
 
-    # Etapa 2: Processamento de Texto
     logger.info("Starting Text processing...")
     spark_session = SparkSessionFactory().create_spark_session("Text Processing")
 
     try:
         text_processor = TFIDFProcessor(spark_session)
 
-        # Processar dados, passando o caminho de saída
         output_path = f"{config.silver_path_itens_embeddings}"
         text_processor.process(output_path)
 
@@ -108,7 +119,6 @@ def main():
         time.sleep(5)
         gc.collect()
 
-    # Etapa 3: Preparação dos dados para LightFM
     logger.info("Starting LightFM data preparation...")
     spark_session = SparkSessionFactory().create_spark_session("LightFM Data Preparation")
     try:

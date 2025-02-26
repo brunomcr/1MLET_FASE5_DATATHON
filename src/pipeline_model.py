@@ -8,6 +8,16 @@ import os
 
 
 def main():
+    """Main entry point for the LightFM training pipeline.
+
+    This function initializes the Spark session, creates an instance of the LightFMTrainer,
+    loads the prepared data, splits the data into training and testing sets, trains the LightFM model,
+    and saves the trained model to the specified output path. It also handles exceptions and ensures
+    that the Spark session is stopped properly at the end of the process.
+
+    Returns:
+        None
+    """
     logger.info("Starting model training pipeline...")
 
     config = Config()
@@ -23,24 +33,19 @@ def main():
             test_ratio=0.2
         )
 
-        # Carrega os dados preparados
         logger.info("Loading prepared data...")
         trainer.load_data()
 
-        # Divide em treino e teste
         logger.info("Splitting data into train/test sets...")
         trainer.split_data()
 
-        # Treina o modelo
         logger.info("Training LightFM model...")
         trainer.train_model()
 
-        # # Avalia o modelo
         # logger.info("Evaluating model performance...")
         # metrics = trainer.evaluate_model()
         # logger.info(f"Model metrics: {metrics}")
 
-        # Salva o modelo treinado
         logger.info("Saving trained model...")
         trainer.save_model()
 
