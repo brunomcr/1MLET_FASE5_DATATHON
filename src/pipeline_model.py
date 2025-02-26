@@ -55,11 +55,6 @@ def main():
         logger.info(f"Training LightFM model with {args.epochs} epochs...")
         trainer.train_model(epochs=args.epochs)
 
-        # # Avalia o modelo
-        # logger.info("Evaluating model performance...")
-        # metrics = trainer.evaluate_model()
-        # logger.info(f"Model metrics: {metrics}")
-
         # Salva o modelo treinado
         logger.info("Saving trained model...")
         trainer.save_model()

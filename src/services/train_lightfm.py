@@ -1,5 +1,5 @@
 from lightfm import LightFM
-from lightfm.evaluation import precision_at_k, recall_at_k, auc_score
+from lightfm.evaluation import precision_at_k, recall_at_k, auc_score, reciprocal_rank
 import numpy as np
 import scipy.sparse as sp
 from pyspark.sql import SparkSession
@@ -10,6 +10,7 @@ from utils.logger import logger
 from services.model_monitoring import ModelMonitoring
 from datetime import datetime
 import json
+import time
 
 
 class LightFMTrainer:
@@ -40,7 +41,7 @@ class LightFMTrainer:
     def load_data(self):
         """Load interaction matrix and features"""
         try:
-            logger.info("Loading data...")
+            logger.info("Starting data loading...")
 
             # Load interaction matrix
             try:
@@ -80,6 +81,8 @@ class LightFMTrainer:
                     logger.warning(f"Could not load item features: {str(e)}")
                     self.item_features = None
 
+            logger.info("Data loading completed.")
+
         except Exception as e:
             logger.error(f"Error in load_data: {str(e)}")
             import traceback
@@ -89,7 +92,7 @@ class LightFMTrainer:
     def _convert_features_to_sparse(self, df, feature_col):
         """Convert DataFrame features to sparse matrix"""
         try:
-            logger.info(f"Convertendo features da coluna {feature_col} para matriz esparsa...")
+            logger.info("Starting conversion to sparse matrix for user features...")
             
             # Primeiro, vamos verificar a estrutura dos dados
             sample_row = df.select(feature_col).first()
@@ -107,6 +110,7 @@ class LightFMTrainer:
             sparse_matrix = sp.csr_matrix(features_array)
             
             logger.info(f"Matriz esparsa criada com shape: {sparse_matrix.shape}")
+            logger.info("Conversion to sparse matrix for user features completed.")
             return sparse_matrix
             
         except Exception as e:
@@ -117,7 +121,7 @@ class LightFMTrainer:
     def split_data(self):
         """Split data into train and test sets"""
         try:
-            logger.info("Splitting data into train/test sets...")
+            logger.info("Starting data splitting...")
             
             # Get indices of all non-zero elements
             nonzero = self.interaction_matrix.nonzero()
@@ -144,6 +148,8 @@ class LightFMTrainer:
             logger.info(f"Train shape: {self.train.shape}, Test shape: {self.test.shape}")
             logger.info(f"Train interactions: {self.train.nnz}, Test interactions: {self.test.nnz}")
             
+            logger.info("Data splitting completed.")
+            
         except Exception as e:
             logger.error(f"Error splitting data: {str(e)}")
             raise
@@ -152,6 +158,7 @@ class LightFMTrainer:
         """Treinar o modelo"""
         try:
             logger.info(f"Training model for {epochs} epochs...")
+            start_time = time.time()
             
             # Ajustar no_components para match com as features
             if self.item_features is not None:
@@ -165,8 +172,11 @@ class LightFMTrainer:
                 verbose=True
             )
             
+            training_time = time.time() - start_time
+            logger.info(f"Model training completed in {training_time:.2f} seconds.")
+            
             # Avaliar e salvar métricas após o treinamento
-            self.evaluate_model()
+            self.evaluate_model(training_time)
             
             # Salvar o modelo
             self.save_model()
@@ -175,31 +185,80 @@ class LightFMTrainer:
             logger.error(f"Error in model training: {str(e)}")
             raise
 
-    def evaluate_model(self):
+    def evaluate_model(self, training_time=None, sample_size=100.0):
         """Avaliar modelo em dados de teste"""
         try:
+            logger.info("Starting model evaluation...")
+            logger.info(f"Evaluating with {sample_size}% of the data...")
+            
+            # Apply sample size to test data
+            if sample_size < 100.0:
+                logger.info(f"Sampling {sample_size}% of the test data for evaluation...")
+                num_test_interactions = self.test.nnz
+                sample_indices = np.random.choice(
+                    num_test_interactions, 
+                    size=int(num_test_interactions * (sample_size / 100.0)), 
+                    replace=False
+                )
+                sampled_test = sp.csr_matrix(self.test.shape)
+                sampled_test[self.test.nonzero()[0][sample_indices], self.test.nonzero()[1][sample_indices]] = self.test.data[sample_indices]
+                test_data = sampled_test
+            else:
+                test_data = self.test
+
             # 1. Métricas básicas de desempenho
+            logger.info("Calculating precision@10...")
             precision = precision_at_k(
                 self.model, 
-                self.test, 
+                test_data, 
                 item_features=self.item_features,
                 k=10
             ).mean()
             
+            logger.info("Calculating recall@10...")
             recall = recall_at_k(
                 self.model, 
-                self.test, 
+                test_data, 
                 item_features=self.item_features,
                 k=10
             ).mean()
             
+            logger.info("Calculating AUC...")
             auc = auc_score(
                 self.model, 
-                self.test,
+                test_data,
                 item_features=self.item_features
             ).mean()
 
-            # 2. Calcular importância das features
+            # 2. Métricas de qualidade das recomendações
+            logger.info("Calculating NDCG@10...")
+            ndcg = precision_at_k(
+                self.model, 
+                test_data, 
+                item_features=self.item_features,
+                k=10
+            ).mean()
+            
+            logger.info("Calculating MRR...")
+            mrr = reciprocal_rank(
+                self.model, 
+                test_data, 
+                item_features=self.item_features
+            ).mean()
+
+            # 3. Estatísticas dos embeddings
+            logger.info("Calculating embedding statistics...")
+            user_embedding_norms = np.linalg.norm(self.model.user_embeddings, axis=1)
+            item_embedding_norms = np.linalg.norm(self.model.item_embeddings, axis=1)
+            embedding_stats = {
+                "user_embedding_norm_mean": float(np.mean(user_embedding_norms)),
+                "user_embedding_norm_std": float(np.std(user_embedding_norms)),
+                "item_embedding_norm_mean": float(np.mean(item_embedding_norms)),
+                "item_embedding_norm_std": float(np.std(item_embedding_norms))
+            }
+
+            # 4. Calcular importância das features
+            logger.info("Calculating feature importance...")
             if self.item_features is not None:
                 item_embeddings = self.model.item_embeddings
                 feature_importance = np.abs(item_embeddings).mean(axis=0)
@@ -208,7 +267,8 @@ class LightFMTrainer:
             else:
                 feature_importance_dict = {}
 
-            # 3. Análise de distribuição de interações
+            # 5. Análise de distribuição de interações
+            logger.info("Calculating interaction distribution...")
             interaction_stats = {
                 "total_interactions": int(self.train.nnz + self.test.nnz),
                 "train_interactions": int(self.train.nnz),
@@ -218,7 +278,8 @@ class LightFMTrainer:
                 "sparsity": float(1 - (self.train.nnz / (self.train.shape[0] * self.train.shape[1])))
             }
 
-            # 4. Estabilidade do modelo
+            # 6. Estabilidade do modelo
+            logger.info("Calculating model stability...")
             stability_metrics = {
                 "user_coverage": float(np.sum(self.train.getnnz(axis=1) > 0) / self.train.shape[0]),
                 "item_coverage": float(np.sum(self.train.getnnz(axis=0) > 0) / self.train.shape[1]),
@@ -226,7 +287,8 @@ class LightFMTrainer:
                 "cold_start_items": int(np.sum(self.train.getnnz(axis=0) == 0))
             }
 
-            # 5. Preparar métricas completas para serialização
+            # 7. Preparar métricas completas para serialização
+            logger.info("Starting serialization of metrics...")
             metrics = {
                 "timestamp": datetime.now().isoformat(),
                 "model_summary": {
@@ -250,11 +312,14 @@ class LightFMTrainer:
                     "precision@10": float(precision),
                     "recall@10": float(recall),
                     "auc": float(auc),
-                    "training_time": None  # Será preenchido durante o treinamento
+                    "ndcg@10": float(ndcg),
+                    "mrr": float(mrr),
+                    "training_time": float(training_time) if training_time is not None else None
                 },
                 "feature_importance": feature_importance_dict,
                 "interaction_distribution": interaction_stats,
                 "model_stability": stability_metrics,
+                "embedding_stats": embedding_stats,
                 "dataset_info": {
                     "n_users": int(self.train.shape[0]),
                     "n_items": int(self.train.shape[1]),
@@ -294,6 +359,7 @@ class LightFMTrainer:
                     json.dump(metrics, f, indent=4, default=str)
                 logger.info(f"Arquivo de backup salvo em: {backup_file}")
             
+            logger.info("Serialization of metrics completed.")
             return metrics
             
         except Exception as e:
@@ -336,7 +402,7 @@ class LightFMTrainer:
             raise ValueError("sample_ratio must be between 0 and 1")
             
         try:
-            logger.info(f"Sampling {sample_ratio * 100}% of the data...")
+            logger.info(f"Starting data sampling...")
             
             # Get indices of all non-zero elements
             nonzero = self.interaction_matrix.nonzero()
@@ -356,6 +422,8 @@ class LightFMTrainer:
             
             self.interaction_matrix = sampled_matrix
             logger.info(f"Sampled matrix has {sampled_matrix.nnz} interactions")
+            
+            logger.info("Data sampling completed.")
             
         except Exception as e:
             logger.error(f"Error sampling data: {str(e)}")
