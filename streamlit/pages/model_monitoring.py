@@ -90,10 +90,9 @@ def show_monitoring_page():
     st.info(f"📅 Última Atualização: {results['timestamp']}")
     
     # Layout em tabs para melhor organização
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "📋 Resumo do Modelo",
         "📈 Performance",
-        "🎯 Features",
         "📊 Distribuição"
     ])
     
@@ -147,19 +146,6 @@ def show_monitoring_page():
             st.metric("Items Cold-Start", f"{stability['cold_start_items']:,}")
     
     with tab3:
-        st.subheader("Importância das Features")
-        fig_importance = plot_feature_importance(results["feature_importance"])
-        st.plotly_chart(fig_importance, use_container_width=True)
-        
-        with st.expander("Ver Todas as Features"):
-            st.dataframe(
-                pd.DataFrame({
-                    'Feature': [f"Feature {i}" for i in range(len(results["feature_importance"]))],
-                    'Importance': list(results["feature_importance"].values())
-                }).sort_values('Importance', ascending=False)
-            )
-    
-    with tab4:
         st.subheader("Distribuição de Interações")
         fig_interactions = plot_interaction_metrics(results["interaction_distribution"])
         st.plotly_chart(fig_interactions, use_container_width=True)
