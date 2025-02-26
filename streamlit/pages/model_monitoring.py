@@ -187,12 +187,20 @@ def show_monitoring_page():
     st.markdown(f"📅 **Última Atualização:** {datetime.strptime(results['timestamp'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y-%m-%d %H:%M')}")
     
     # Layout em tabs para melhor organização
+    # tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    #     "📋 Resumo do Modelo",
+    #     "📈 Performance",
+    #     "📊 Distribuição",
+    #     "🎯 Métricas Avançadas",
+    #     "⚙️ Métricas Técnicas"
+    # ])
+
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📋 Resumo do Modelo",
-        "📈 Performance",
-        "📊 Distribuição",
-        "🎯 Métricas Avançadas",
-        "⚙️ Métricas Técnicas"
+        "Resumo do Modelo",
+        "Performance",
+        "Distribuição",
+        "Métricas Avançadas",
+        "Métricas Técnicas"
     ])
     
     with tab1:
