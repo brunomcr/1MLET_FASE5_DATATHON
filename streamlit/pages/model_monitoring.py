@@ -190,15 +190,18 @@ def show_monitoring_page():
         with col1:
             st.subheader("Informações do Modelo")
             model_summary = results["model_summary"]
+
             st.markdown(f"""
-            - **Tipo**: {model_summary['model_type']}
-            - **Dimensão dos Embeddings**: {model_summary['embedding_dim']}
-            - **Função de Perda**: {model_summary['loss_function']}
-            - **Learning Rate**: {model_summary['learning_rate']}
-            - **Tamanho do Modelo**: {model_summary['model_size_mb']:.2f} MB
-            - **Amostra Utilizada**: {results.get('sample_size', 'N/A')}%
+            - **Tipo**: {model_summary.get('model_type', 'N/A')}
+            - **Dimensão dos Embeddings**: {model_summary.get('embedding_dim', 'N/A')}
+            - **Função de Perda**: {model_summary.get('loss_function', 'N/A')}
+            - **Learning Rate**: {model_summary.get('learning_rate', 'N/A')}
+            - **Tamanho do Modelo**: {model_summary.get('model_size_mb', 0.0):.2f} MB
+            - **Épocas de Treinamento**: {model_summary.get('epochs', 'N/A')}
+            - **Amostra Utilizada**: {results.get('sample_size', 0.0):.2f}%
             ------------------------------------------------------------
             """)
+
             st.markdown("""
             **Explicação das Métricas:**
             - **Tipo**: Tipo de modelo utilizado, como LightFM, que é adequado para recomendações.
@@ -207,20 +210,22 @@ def show_monitoring_page():
             - **Learning Rate**: Taxa de aprendizado que controla a velocidade de ajuste do modelo durante o treinamento.
             - **Tamanho do Modelo**: Espaço ocupado pelo modelo em disco, importante para armazenamento e carregamento.
             - **Amostra Utilizada**: Percentual do dataset utilizado para o treinamento do modelo.
+            - **Épocas de Treinamento**: Número de vezes que o modelo passou por todo o conjunto de dados durante o treinamento.
             """)
         
         with col2:
             st.subheader("Hiperparâmetros")
-            hyperparams = results["hyperparameters"]
+            hyperparams = results.get("hyperparameters", {})
             st.markdown(f"""
-            - **Número de Componentes**: {hyperparams['no_components']}
-            - **Learning Rate**: {hyperparams['learning_rate']}
-            - **Loss Function**: {hyperparams['loss']}
-            - **Item Alpha**: {hyperparams['item_alpha']}
-            - **User Alpha**: {hyperparams['user_alpha']}
-            - **Random State**: {hyperparams['random_state']}
+            - **Número de Componentes**: {hyperparams.get('no_components', 'N/A')}
+            - **Learning Rate**: {hyperparams.get('learning_rate', 'N/A')}
+            - **Loss Function**: {hyperparams.get('loss', 'N/A')}
+            - **Item Alpha**: {hyperparams.get('item_alpha', 'N/A')}
+            - **User Alpha**: {hyperparams.get('user_alpha', 'N/A')}
+            - **Random State**: {hyperparams.get('random_state', 'N/A')}
             ------------------------------------------------------------
             """)
+
             st.markdown("""
             **Explicação dos Hiperparâmetros:**
             - **Número de Componentes**: Quantidade de características latentes que o modelo aprende, afetando a precisão.

@@ -1,3 +1,17 @@
+"""
+LightFM Trainer Implementation
+-----------------------------
+This is the consolidated and current implementation of the LightFM trainer.
+It includes advanced features such as:
+- Model monitoring and metrics tracking
+- Data sampling capabilities
+- Detailed evaluation metrics
+- JSON-based monitoring results
+- Proper error handling and logging
+
+Note: This implementation supersedes the previous version in model_trainer.py
+"""
+
 from lightfm import LightFM
 from lightfm.evaluation import precision_at_k, recall_at_k, auc_score, reciprocal_rank
 import numpy as np
@@ -155,37 +169,35 @@ class LightFMTrainer:
             raise
 
     def train_model(self, epochs=30):
-        """Treinar o modelo"""
+        """Train the LightFM model"""
         try:
-            logger.info(f"Training model for {epochs} epochs...")
+            logger.info("Starting model training...")
             start_time = time.time()
             
-            # Ajustar no_components para match com as features
-            if self.item_features is not None:
-                self.model.no_components = self.item_features.shape[1]
-                logger.info(f"Adjusted model components to match item features: {self.model.no_components}")
-            
             self.model.fit(
-                interactions=self.train,
+                self.train,
                 item_features=self.item_features,
                 epochs=epochs,
                 verbose=True
             )
             
             training_time = time.time() - start_time
-            logger.info(f"Model training completed in {training_time:.2f} seconds.")
+            logger.info(f"Model training completed in {training_time:.2f} seconds")
             
-            # Avaliar e salvar métricas após o treinamento
-            self.evaluate_model(training_time)
+
+            original_interactions = getattr(self, 'original_interaction_matrix', self.interaction_matrix).nnz
+            current_interactions = self.train.nnz + self.test.nnz
+            sample_size = (current_interactions / original_interactions) * 100.0
             
-            # Salvar o modelo
-            self.save_model()
+            self.evaluate_model(training_time=training_time, sample_size=sample_size, epochs=epochs)
+            
+            logger.info("Model training and evaluation completed.")
             
         except Exception as e:
-            logger.error(f"Error in model training: {str(e)}")
+            logger.error(f"Error training model: {str(e)}")
             raise
 
-    def evaluate_model(self, training_time=None, sample_size=100.0):
+    def evaluate_model(self, training_time=None, sample_size=100.0, epochs=30):
         """Avaliar modelo em dados de teste"""
         try:
             logger.info("Starting model evaluation...")
@@ -298,7 +310,8 @@ class LightFMTrainer:
                     "learning_schedule": "adagrad",
                     "learning_rate": float(self.model.learning_rate),
                     "last_modified": datetime.now().isoformat(),
-                    "model_size_mb": os.path.getsize(self.model_output_path) / (1024 * 1024) if os.path.exists(self.model_output_path) else None
+                    "model_size_mb": os.path.getsize(self.model_output_path) / (1024 * 1024) if os.path.exists(self.model_output_path) else None,
+                    "epochs": epochs
                 },
                 "hyperparameters": {
                     "no_components": int(self.model.no_components),
@@ -404,6 +417,9 @@ class LightFMTrainer:
             
         try:
             logger.info(f"Starting data sampling...")
+            
+            # Preservar a matriz original
+            self.original_interaction_matrix = self.interaction_matrix.copy()
             
             # Get indices of all non-zero elements
             nonzero = self.interaction_matrix.nonzero()
