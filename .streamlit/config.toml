@@ -1,0 +1,20 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+runOnSave = true
+headless = true
+
+[theme]
+primaryColor = "#4CAF50"
+backgroundColor = "#1E1E1E"
+secondaryBackgroundColor = "#252526"
+textColor = "#FAFAFA"
+
+[ui]
+hideSidebarNav = true
+hideTopNav = true
+
+[client]
+showSidebarNavigation = false
+toolbarMode = "minimal" 
