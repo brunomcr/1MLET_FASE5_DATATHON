@@ -17,18 +17,28 @@ import gc
 class BronzeToSilverTransformer:
     def __init__(self, spark=None):
         if spark is None:
-            # Usar a factory existente ao invés de criar uma nova configuração
+          
             spark_factory = SparkSessionFactory()
             self.spark = spark_factory.create_spark_session("G1 Recommendations")
         else:
             self.spark = spark
-        # UDF para extrair o valor escalar de um vetor, usada na normalização
+      
         self.extract_scalar_udf = udf(lambda vec: float(vec[0]) if vec else None, DoubleType())
 
     def log_step(self, message):
         logger.info(message)
 
     def transform_treino(self, input_path: str, output_path: str):
+        """
+        Transform the 'Treino' dataset from raw CSV files to a processed Parquet format.
+
+        Args:
+            input_path (str): The path to the input directory containing the raw CSV files.
+            output_path (str): The path to the output directory where the processed Parquet files will be saved.
+
+        Returns:
+            None
+        """
         self.log_step("Starting 'Treino' transformation...")
         file_path = f"{input_path}/files/treino/"
         self.log_step(f"Reading CSV files from {file_path}...")
@@ -105,7 +115,7 @@ class BronzeToSilverTransformer:
             .withColumn("year", year(col("timestamp"))) \
             .withColumn("month", month(col("timestamp"))) \
             .withColumn("day", dayofmonth(col("timestamp"))) \
-            .drop("timestamp")  # Remove a coluna temporária
+            .drop("timestamp")  
 
         self.log_step("Writing partitioned Parquet files for treino...")
         df.write.mode("overwrite") \
@@ -116,6 +126,16 @@ class BronzeToSilverTransformer:
         self.log_step("'Treino' transformation completed and data saved.")
 
     def transform_itens(self, input_path: str, output_path: str):
+        """
+        Transform the 'Itens' dataset from raw CSV files to a processed Parquet format.
+
+        Args:
+            input_path (str): The path to the input directory containing the raw CSV files.
+            output_path (str): The path to the output directory where the processed Parquet files will be saved.
+
+        Returns:
+            None
+        """
         self.log_step("Starting 'Itens' transformation...")
         file_path = f"{input_path}/itens/itens/"
         self.log_step(f"Reading CSV files from {file_path}...")
@@ -163,16 +183,26 @@ class BronzeToSilverTransformer:
         self.log_step("'Itens' transformation completed and data saved.")
 
     def normalize_treino(self, input_path: str, output_path: str):
+        """
+        Normalize the 'Treino' dataset by applying transformations and saving it in a partitioned Parquet format.
+
+        Args:
+            input_path (str): The path to the input directory containing the Parquet files.
+            output_path (str): The path to the output directory where the normalized Parquet files will be saved.
+
+        Returns:
+            None
+        """
         self.log_step("Starting treino normalization...")
         df = self.spark.read.parquet(input_path)
 
-        # Aplicar Label Encoding na coluna userType
+      
         if 'userType' in df.columns:
             indexer = StringIndexer(inputCol='userType', outputCol='userType_index')
             df = indexer.fit(df).transform(df)
             df = df.drop('userType').withColumnRenamed('userType_index', 'userType')  # Substituir a coluna original
 
-        # Aplicar Log Normalization
+       
         log_columns = [
             "timeOnPageHistory", "time_since_last_interaction", "time_since_first_interaction",
             "interaction_score", "recency_weight", "avg_time_on_page", "time_weight", "adjusted_score"
@@ -181,7 +211,7 @@ class BronzeToSilverTransformer:
             if col_name in df.columns:
                 df = df.withColumn(col_name, log1p(col(col_name)))
 
-        # Aplicar Min-Max Scaling
+        
         minmax_columns = [
             "numberOfClicksHistory", "scrollPercentageHistory", "pageVisitsCountHistory",
             "hour", "dayofweek", "first_interaction"
@@ -217,6 +247,16 @@ class BronzeToSilverTransformer:
         self.log_step("Treino normalization completed!")
 
     def normalize_itens(self, input_path: str, output_path: str):
+        """
+        Normalize the 'Itens' dataset by applying transformations and saving it in a partitioned Parquet format.
+
+        Args:
+            input_path (str): The path to the input directory containing the Parquet files.
+            output_path (str): The path to the output directory where the normalized Parquet files will be saved.
+
+        Returns:
+            None
+        """
         self.log_step("Starting itens normalization...")
         df = self.spark.read.parquet(input_path)
 

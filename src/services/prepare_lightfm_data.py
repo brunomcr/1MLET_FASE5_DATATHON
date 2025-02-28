@@ -12,6 +12,20 @@ class LightFMDataPreparer:
     def __init__(self, spark: SparkSession, silver_path_treino_normalized: str, silver_path_itens_embeddings: str,
                  gold_path_lightfm_interactions: str, gold_path_lightfm_user_features: str,
                  gold_path_lightfm_item_features: str):
+        """
+        Initialize the LightFMDataPreparer.
+
+        Args:
+            spark (SparkSession): A Spark session for processing data.
+            silver_path_treino_normalized (str): Path to the normalized 'Treino' dataset.
+            silver_path_itens_embeddings (str): Path to the item embeddings dataset.
+            gold_path_lightfm_interactions (str): Path to save the LightFM interactions matrix.
+            gold_path_lightfm_user_features (str): Path to save the user features.
+            gold_path_lightfm_item_features (str): Path to save the item features.
+
+        Returns:
+            None
+        """
         self.spark = spark
         self.silver_path_treino_normalized = silver_path_treino_normalized
         self.silver_path_itens_embeddings = silver_path_itens_embeddings
@@ -20,10 +34,19 @@ class LightFMDataPreparer:
         self.gold_path_lightfm_item_features = gold_path_lightfm_item_features
 
     def create_id_mappings(self, treino_df, items_embeddings_df):
-        """Criar mapeamento numérico para userId e page."""
+        """
+        Create numerical mappings for userId and page.
+
+        Args:
+            treino_df (DataFrame): The DataFrame containing training data.
+            items_embeddings_df (DataFrame): The DataFrame containing item embeddings.
+
+        Returns:
+            tuple: A tuple containing two dictionaries: user_id_map and page_id_map.
+        """
         logger.info("Creating ID mappings...")
 
-        # Debug dos dados antes do mapeamento
+     
         logger.info("Sample of training pages:")
         treino_df.select("history").distinct().show(5, truncate=False)
 
@@ -38,7 +61,7 @@ class LightFMDataPreparer:
 
         logger.info(f"Created mappings - Users: {len(user_id_map)}, Pages: {len(page_id_map)}")
 
-        # Verificar cobertura
+    
         total_pages = treino_df.select("history").distinct().count()
         pages_in_mapping = sum(1 for page in treino_df.select("history").distinct().rdd.flatMap(lambda x: x).collect()
                                if page in page_id_map)
@@ -49,19 +72,29 @@ class LightFMDataPreparer:
         return user_id_map, page_id_map
 
     def build_interaction_matrix(self, treino_df, user_id_map, page_id_map):
-        """Construir a matriz de interações usando adjusted_score."""
+        """
+        Build the interaction matrix using adjusted_score.
+
+        Args:
+            treino_df (DataFrame): The DataFrame containing training data.
+            user_id_map (dict): A mapping of user IDs to numerical indices.
+            page_id_map (dict): A mapping of page IDs to numerical indices.
+
+        Returns:
+            csr_matrix: A sparse matrix representing user-item interactions.
+        """
         try:
             logger.info("Building interaction matrix...")
             logger.info(f"Input DataFrame size: {treino_df.count()} rows")
             logger.info(f"Number of users: {len(user_id_map)}")
             logger.info(f"Number of pages: {len(page_id_map)}")
 
-            # Debug dos mapeamentos
+        
             logger.info("Sample of page_id_map:")
             sample_pages = list(page_id_map.keys())[:5]
             logger.info(f"First 5 pages in mapping: {sample_pages}")
 
-            # Processar cada partição separadamente
+        
             def process_partition(iterator):
                 users = []
                 items = []
@@ -73,7 +106,7 @@ class LightFMDataPreparer:
                     try:
                         partition_count += 1
 
-                        # Log para a primeira linha de cada partição
+                
                         if partition_count == 1:
                             logger.info(f"Processing partition - First row data:")
                             logger.info(f"userId: {row.userId}")
@@ -89,25 +122,25 @@ class LightFMDataPreparer:
                             logger.warning(f"User ID {row.userId} not found in mapping")
                             continue
 
-                        # A história é uma única string, não uma lista
+                 
                         page = row.history.strip()
                         page_idx = page_id_map.get(page)
 
                         if page_idx is not None:
                             try:
                                 score = float(row.adjusted_score)
-                                if score > 0:  # Apenas interações positivas
-                                    # Yield cada interação individualmente
+                                if score > 0: 
+                                 
                                     yield (user_idx, page_idx, score)
 
-                                    if partition_count == 1:  # Log da primeira interação bem-sucedida
+                                    if partition_count == 1: 
                                         logger.info(f"First successful interaction: user={row.userId}, "
                                                     f"page={page}, score={score}")
                             except (ValueError, TypeError) as e:
                                 logger.warning(f"Invalid score value for user {row.userId}, page {page}: {str(e)}")
                                 error_count += 1
                         else:
-                            if partition_count == 1:  # Log apenas para a primeira linha
+                            if partition_count == 1: 
                                 logger.warning(
                                     f"Page {page} not found in mapping. Available pages sample: {sample_pages[:2]}")
 
@@ -116,20 +149,20 @@ class LightFMDataPreparer:
                         logger.error(f"Error processing row {index}: {str(e)}")
                         continue
 
-                    # Log a cada 1000 linhas processadas
+                  
                     if partition_count % 1000 == 0:
                         logger.info(f"Processed {partition_count} rows in partition")
 
                 logger.info(f"Partition completed: {partition_count} rows processed, {error_count} errors")
 
-            # Usar mapPartitions para processar as interações
+          
             interactions_rdd = treino_df.rdd.zipWithIndex().mapPartitions(process_partition)
 
-            # Coletar os resultados
+          
             logger.info("Collecting interactions from all partitions...")
             interactions = interactions_rdd.collect()
 
-            # Separar as interações em listas
+          
             users, items, scores = [], [], []
             for user_idx, page_idx, score in interactions:
                 users.append(user_idx)
@@ -139,7 +172,7 @@ class LightFMDataPreparer:
             total_interactions = len(users)
             logger.info(f"Total interactions collected: {total_interactions}")
 
-            # Converter para arrays numpy
+        
             users = np.array(users)
             items = np.array(items)
             scores = np.array(scores)
@@ -166,10 +199,18 @@ class LightFMDataPreparer:
             raise
 
     def create_user_features(self, treino_df):
-        """Criar features do usuário e normalizá-las."""
+        """
+        Create user features and normalize them.
+
+        Args:
+            treino_df (DataFrame): The DataFrame containing training data.
+
+        Returns:
+            DataFrame: A DataFrame containing normalized user features.
+        """
         logger.info("Creating user features...")
 
-        # Agregar features por usuário
+      
         user_features = treino_df.groupBy("userId").agg(
             first("userType").alias("userType"),
             avg("avg_time_on_page").alias("avg_time_on_page"),
@@ -201,40 +242,56 @@ class LightFMDataPreparer:
         scaler_model = scaler.fit(user_features)
         user_features = scaler_model.transform(user_features)
 
-        # Verificar se o número de usuários corresponde ao mapeamento
+       
         unique_users = user_features.count()
         logger.info(f"Created user features for {unique_users} users")
 
         return user_features
 
     def create_item_features(self, items_embeddings_df):
-        """Criar features dos itens a partir do vetor TF-IDF."""
+        """
+        Create item features from the TF-IDF vector.
+
+        Args:
+            items_embeddings_df (DataFrame): The DataFrame containing item embeddings.
+
+        Returns:
+            DataFrame: A DataFrame containing item features.
+        """
         logger.info("Creating item features...")
 
         item_features = items_embeddings_df.select("page", "features")
         return item_features
 
     def prepare_data(self):
-        """Método principal para preparar os dados para o LightFM."""
+        """
+        Main method to prepare data for LightFM.
+
+        Args:
+            None
+
+        Returns:
+            None
+        """
         logger.info("Preparing data for LightFM...")
 
-        # Ler dados
+     
         treino_df = self.spark.read.parquet(self.silver_path_treino_normalized)
         items_embeddings_df = self.spark.read.parquet(self.silver_path_itens_embeddings)
 
-        # Criar mapeamentos
+       
         user_id_map, page_id_map = self.create_id_mappings(treino_df, items_embeddings_df)
 
-        # Construir matriz de interações
+       
         interaction_matrix = self.build_interaction_matrix(treino_df, user_id_map, page_id_map)
 
-        # Criar features do usuário
+        
         user_features = self.create_user_features(treino_df)
 
-        # Criar features dos itens
+       
         item_features = self.create_item_features(items_embeddings_df)
 
-        # Salvar a matriz de interações como .npz
+       
         try:
             logger.info("Salvando a matriz de interações como .npz...")
             sp.save_npz(os.path.join(self.gold_path_lightfm_interactions, "interaction_matrix.npz"), interaction_matrix)
@@ -242,15 +299,8 @@ class LightFMDataPreparer:
         except Exception as e:
             logger.error(f"Erro ao salvar a matriz de interações: {str(e)}")
 
-        # Salvar features do usuário como .npz e Parquet
+       
         try:
-            # logger.info("Salvando as features do usuário como .npz...")
-            # user_features_npz = user_features.select("userId", "user_features").toPandas().set_index("userId").values
-            # user_features_npz = user_features_npz.astype(np.float32)  # Convertendo para float32
-            # user_features_csr = sp.csr_matrix(user_features_npz)  # Converter para csr_matrix
-            # sp.save_npz(os.path.join(self.gold_path_lightfm_user_features, "user_features.npz"), user_features_csr)
-            # logger.info("Features do usuário salvas com sucesso como .npz.")
-
             logger.info("Salvando as features do usuário como Parquet...")
             user_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
                                                                                          "10000").parquet(
@@ -260,15 +310,8 @@ class LightFMDataPreparer:
         except Exception as e:
             logger.error(f"Erro ao salvar as features do usuário: {str(e)}")
 
-        # Salvar features dos itens como .npz e Parquet
-        try:
-            # logger.info("Salvando as features dos itens como .npz...")
-            # item_features_npz = item_features.select("page", "features").toPandas().set_index("page").values
-            # item_features_npz = item_features_npz.astype(np.float32)  # Convertendo para float32
-            # item_features_csr = sp.csr_matrix(item_features_npz)  # Converter para csr_matrix
-            # sp.save_npz(os.path.join(self.gold_path_lightfm_item_features, "item_features.npz"), item_features_csr)
-            # logger.info("Features dos itens salvas com sucesso como .npz.")
-
+       
+        try:  
             logger.info("Salvando as features dos itens como Parquet...")
             item_features.write.mode("overwrite").option("compression", "snappy").option("maxRecordsPerFile",
                                                                                          "10000").parquet(

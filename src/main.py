@@ -5,7 +5,7 @@ import argparse
 import time
 
 
-def run_docker_compose(service=None, mode=None):
+def run_docker_compose(service=None, mode=None, sample_size=None, epochs=None):
     """Run docker-compose in a system-agnostic way"""
     try:
         # Create necessary directories
@@ -24,7 +24,22 @@ def run_docker_compose(service=None, mode=None):
 
             # Run model training after ETL completes
             print("Starting model training...")
-            subprocess.run(["docker-compose", "run", "model", "python", "src/pipeline_model.py"], check=True)
+            model_cmd = ["docker-compose", "run", "model", "python", "src/pipeline_model.py"]
+            
+            # Add sample size parameter if provided
+            if sample_size:
+                print(f"Training using {sample_size}% of the dataset...")
+                model_cmd.extend(["--sample_size", str(sample_size)])
+            else:
+                print("Training using 100% of the dataset...")
+                
+            # Add epochs parameter if provided
+            if epochs:
+                print(f"Training for {epochs} epochs...")
+                model_cmd.extend(["--epochs", str(epochs)])
+                
+            # Execute the model training command
+            subprocess.run(model_cmd, check=True)
 
             # Start other services
             print("Starting Jupyter and Streamlit...")
@@ -33,7 +48,25 @@ def run_docker_compose(service=None, mode=None):
         else:
             # Run all services in detached mode
             subprocess.run(["docker-compose", "up", "--build", "etl"], check=True)
-            subprocess.run(["docker-compose", "up", "--build", "-d", "model"], check=True)
+            
+            # Run model with parameters
+            model_cmd = ["docker-compose", "run", "-d", "model", "python", "src/pipeline_model.py"]
+            
+            # Add sample size parameter if provided
+            if sample_size:
+                print(f"Training using {sample_size}% of the dataset...")
+                model_cmd.extend(["--sample_size", str(sample_size)])
+            else:
+                print("Training using 100% of the dataset...")
+                
+            # Add epochs parameter if provided
+            if epochs:
+                print(f"Training for {epochs} epochs...")
+                model_cmd.extend(["--epochs", str(epochs)])
+                
+            # Execute the model training command
+            subprocess.run(model_cmd, check=True)
+            
             subprocess.run(["docker-compose", "up", "--build", "-d", "jupyter"], check=True)
             subprocess.run(["docker-compose", "up", "--build", "-d", "streamlit"], check=True)
 
@@ -49,8 +82,12 @@ if __name__ == "__main__":
                         help='Specific service to run')
     parser.add_argument('--mode', choices=['full'],
                         help='Run mode: full = ETL + Training + Services')
+    parser.add_argument('--sample_size', type=float,
+                        help='Percentage of data to use for model training (e.g., 1.0 for 1%, 10.0 for 10%)')
+    parser.add_argument('--epochs', type=int,
+                        help='Number of training epochs for the model')
 
     args = parser.parse_args()
 
     print(f"Detected Operating System: {platform.system()}")
-    run_docker_compose(args.service, args.mode)
+    run_docker_compose(args.service, args.mode, args.sample_size, args.epochs)

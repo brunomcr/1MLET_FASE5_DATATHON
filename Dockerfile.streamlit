@@ -18,10 +18,14 @@ RUN pip install --no-cache-dir \
     numpy==1.24.3 \
     scikit-learn==1.2.2 \
     pyspark \
-    streamlit-option-menu
+    streamlit-option-menu \
+    lightfm
 
-# Copy the rest of the project
+# Copy the project files
 COPY . .
+
+# Add src to PYTHONPATH
+ENV PYTHONPATH="${PYTHONPATH}:/app/src"
 
 ENV PYTHONUNBUFFERED=1
 
