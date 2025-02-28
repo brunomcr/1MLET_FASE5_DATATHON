@@ -31,8 +31,15 @@ source .venv/bin/activate  # On Unix/macOS
 ```
 
 4. Install dependencies:
+
+- Basic installation:
 ```bash
-pip install -r requirements.txt
+pip install -e .
+```
+
+- Development installation:
+```bash
+pip install -e ".[dev]"
 ```
 
 ### Environment Setup

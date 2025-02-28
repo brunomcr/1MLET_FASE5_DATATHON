@@ -1,19 +1,19 @@
 from typing import List
-from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 
-from app.containers import Container
 from app.schemas.prediction.requests.prediction_request import PredictionRequest
 from app.schemas.prediction.responses.prediction_response import PredictionResponse
 from app.services.model_service import ModelService
 
 router = APIRouter(prefix="/v1/predict", tags=["Prediction, Recommendation System, Machine Learning"])
 
+def get_model_service(request: Request) -> ModelService:
+    return request.app.container.model_service()
+
 @router.post("/", response_model=PredictionResponse)
-@inject
 async def predict(
     request: PredictionRequest,
-    model_service: ModelService = Depends(Provide[Container.model_service])
+    model_service: ModelService = Depends(get_model_service)
 ) -> PredictionResponse:
     """
     Get article recommendations for a single user
@@ -32,14 +32,16 @@ async def predict(
 
 
 @router.post("/batch", response_model=List[PredictionResponse])
-@inject
 async def predict_batch(
     requests: List[PredictionRequest],
-    model_service: ModelService = Depends(Provide[Container.model_service])
+    model_service: ModelService = Depends(get_model_service)
 ) -> List[PredictionResponse]:
     """
     Get article recommendations for multiple users
     """
+    if not requests:
+        raise HTTPException(status_code=422, detail="Empty batch request is not allowed")
+        
     try:
         responses = []
         for request in requests:
